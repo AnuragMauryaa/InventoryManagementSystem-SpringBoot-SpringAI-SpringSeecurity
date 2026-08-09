@@ -16,7 +16,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpMethod;
 
 import java.util.List;
-import java.util.List;
 
 @Configuration
 @EnableMethodSecurity
@@ -25,8 +24,7 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final AuthenticationProvider authenticationProvider;
-@Value("${app.frontend-url}")
-private String frontendUrl;
+
    @Bean
 public SecurityFilterChain securityFilterChain(HttpSecurity http)
         throws Exception {
@@ -36,11 +34,7 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http)
         .csrf(csrf -> csrf.disable())
 
         .authorizeHttpRequests(auth -> auth
-
-            .requestMatchers(
-                "/api/auth/login",
-                "/api/auth/register"
-            ).permitAll()
+    .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
             .requestMatchers("/api/**").authenticated()
 
@@ -50,39 +44,41 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http)
     return http.build();
 }
 
-   @Bean
-public CorsConfigurationSource corsConfigurationSource() {
+  @Value("${app.frontend-url}")
+private String frontendUrl;
 
+@Bean
+public CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration configuration = new CorsConfiguration();
 
-    configuration.setAllowedOrigins(
-        List.of(frontendUrl)
-    );
+    configuration.setAllowedOrigins(List.of(
+        frontendUrl,
+        "http://localhost:5173"
+    ));
 
-    configuration.setAllowedMethods(
-        List.of(
-            "GET",
-            "POST",
-            "PUT",
-            "DELETE",
-            "PATCH",
-            "OPTIONS"
-        )
-    );
+    configuration.setAllowedMethods(List.of(
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+        "PATCH",
+        "OPTIONS"
+    ));
 
-    configuration.setAllowedHeaders(
-        List.of("*")
-    );
+    configuration.setAllowedHeaders(List.of(
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+        "X-Requested-With"
+    ));
 
     configuration.setAllowCredentials(true);
 
     UrlBasedCorsConfigurationSource source =
         new UrlBasedCorsConfigurationSource();
 
-    source.registerCorsConfiguration(
-        "/**",
-        configuration
-    );
+    source.registerCorsConfiguration("/**", configuration);
 
     return source;
 }
