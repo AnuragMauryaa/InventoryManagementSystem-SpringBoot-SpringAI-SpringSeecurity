@@ -54,27 +54,31 @@ public class SecurityConfig {
         return source;
     }
 
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http)
-            throws Exception {
+   @Bean
+public SecurityFilterChain securityFilterChain(HttpSecurity http)
+        throws Exception {
 
-        http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(csrf -> csrf.disable())
+    http
+        .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        .csrf(csrf -> csrf.disable())
 
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+        .authorizeHttpRequests(auth -> auth
+            .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+            .requestMatchers(
+                "/api/auth/login",
+                "/api/auth/register"
+            ).permitAll()
+            .anyRequest().authenticated()
+        )
 
-                        // KEEP YOUR EXISTING PUBLIC ENDPOINTS HERE
-                        .requestMatchers(
-                                "/api/auth/login",
-                                "/api/auth/register"
-                        ).permitAll()
+        // KEEP THIS IF IT EXISTS IN YOUR CURRENT FILE
+        .authenticationProvider(authenticationProvider)
 
-                        // KEEP YOUR EXISTING AUTHENTICATED RULES HERE
-                        .anyRequest().authenticated()
-                );
+        // KEEP THIS IF IT EXISTS IN YOUR CURRENT FILE
+        .addFilterBefore(
+            jwtAuthenticationFilter,
+            UsernamePasswordAuthenticationFilter.class
+        );
 
-        return http.build();
-    }
+    return http.build();
 }
