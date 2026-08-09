@@ -27,47 +27,28 @@ public class SecurityConfig {
     private final AuthenticationProvider authenticationProvider;
 @Value("${app.frontend-url}")
 private String frontendUrl;
-    @Bean
-    public SecurityFilterChain securityFilterChain(
-            HttpSecurity http
-    ) throws Exception {
+   @Bean
+public SecurityFilterChain securityFilterChain(HttpSecurity http)
+        throws Exception {
 
-        http
-                .csrf(csrf -> csrf.disable())
+    http
+        .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        .csrf(csrf -> csrf.disable())
 
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+        .authorizeHttpRequests(auth -> auth
 
-                .sessionManagement(session ->
-                        session.sessionCreationPolicy(
-                                SessionCreationPolicy.STATELESS
-                        )
-                )
+            .requestMatchers(
+                "/api/auth/login",
+                "/api/auth/register"
+            ).permitAll()
 
-                .authenticationProvider(authenticationProvider)
+            .requestMatchers("/api/**").authenticated()
 
-                .authorizeHttpRequests(auth -> auth
+            .anyRequest().permitAll()
+        );
 
-                        // Authentication endpoints
-                        .requestMatchers(
-                                "/api/auth/**"
-                        ).permitAll()
-
-                        // AI endpoint
-                        .requestMatchers(
-                                "/api/ai/**"
-                        ).authenticated()
-
-                        // Everything else requires authentication
-                        .anyRequest().authenticated()
-                )
-
-                .addFilterBefore(
-                        jwtAuthenticationFilter,
-                        UsernamePasswordAuthenticationFilter.class
-                );
-
-        return http.build();
-    }
+    return http.build();
+}
 
    @Bean
 public CorsConfigurationSource corsConfigurationSource() {
