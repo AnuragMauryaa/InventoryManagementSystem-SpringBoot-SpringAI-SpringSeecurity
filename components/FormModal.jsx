@@ -1,132 +1,210 @@
-import { useState } from 'react';
-import Modal from './Modal';
+import { useEffect, useState } from "react";
+import Modal from "./Modal";
 
 export default function FormModal({
   title,
   fields,
- initial = {},
-  submitLabel = 'Save',
+  initial = {},
+  submitLabel = "Save",
   onSubmit,
-  onClose
+  onClose,
 }) {
-
   const [values, setValues] = useState(() => {
-
-    const obj = {};
+    const result = {};
 
     fields.forEach((field) => {
-
-      obj[field.name] =
+      result[field.name] =
         initial[field.name] ??
         (
-          field.type === 'checkbox'
+          field.type === "checkbox"
             ? true
-            : field.type === 'select'
-            ? field.options?.[0]?.value ?? ''
-            : ''
+            : field.type === "select"
+              ? field.options?.[0]?.value ?? ""
+              : ""
         );
-
     });
 
-    return obj;
-
+    return result;
   });
 
-  const [errors, setErrors] = useState({});
-  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] =
+    useState({});
 
-  const setValue = (name, value) => {
+  const [submitError, setSubmitError] =
+    useState("");
 
-    setValues((prev) => ({
-      ...prev,
-      [name]: value
+  const [submitting, setSubmitting] =
+    useState(false);
+
+  /*
+   * Keep initial values synchronized when a
+   * parent changes the selected record.
+   */
+  useEffect(() => {
+    const result = {};
+
+    fields.forEach((field) => {
+      result[field.name] =
+        initial[field.name] ??
+        (
+          field.type === "checkbox"
+            ? true
+            : field.type === "select"
+              ? field.options?.[0]?.value ?? ""
+              : ""
+        );
+    });
+
+    setValues(result);
+    setErrors({});
+    setSubmitError("");
+  }, [initial, fields]);
+
+  const set = (name, value) => {
+    setValues((previous) => ({
+      ...previous,
+      [name]: value,
     }));
 
+    /*
+     * Remove the field-level error as soon as
+     * the user changes that field.
+     */
+    setErrors((previous) => {
+      if (!previous[name]) {
+        return previous;
+      }
+
+      const next = {
+        ...previous,
+      };
+
+      delete next[name];
+
+      return next;
+    });
+
+    setSubmitError("");
   };
 
   const validate = () => {
-
-    const e = {};
+    const nextErrors = {};
 
     fields.forEach((field) => {
-
-      if (!field.required) return;
-
-      if (field.type === 'checkbox') return;
+      if (
+        !field.required ||
+        field.type === "checkbox"
+      ) {
+        return;
+      }
 
       const value = values[field.name];
 
       if (
-        value === '' ||
+        value === "" ||
         value === null ||
         value === undefined
       ) {
-        e[field.name] = 'Required';
+        nextErrors[field.name] =
+          "Required";
       }
 
+      if (
+        field.type === "number" &&
+        value !== "" &&
+        Number.isNaN(Number(value))
+      ) {
+        nextErrors[field.name] =
+          "Enter a valid number";
+      }
+
+      if (
+        field.min !== undefined &&
+        value !== "" &&
+        Number(value) < field.min
+      ) {
+        nextErrors[field.name] =
+          `Minimum value is ${field.min}`;
+      }
     });
 
-    setErrors(e);
+    setErrors(nextErrors);
 
-    return Object.keys(e).length === 0;
-
+    return (
+      Object.keys(nextErrors).length === 0
+    );
   };
 
   const handleSubmit = async (event) => {
-
     event.preventDefault();
 
-    if (!validate()) return;
+    if (submitting) {
+      return;
+    }
+
+    setSubmitError("");
+
+    if (!validate()) {
+      return;
+    }
 
     const output = {};
 
     fields.forEach((field) => {
-
-      output[field.name] =
-        field.type === 'number'
-          ? Number(values[field.name])
-          : values[field.name];
-
+      if (field.type === "number") {
+        output[field.name] =
+          values[field.name] === ""
+            ? null
+            : Number(values[field.name]);
+      } else {
+        output[field.name] =
+          values[field.name];
+      }
     });
 
+    setSubmitting(true);
+
     try {
-
-      setSaving(true);
-
+      /*
+       * The important difference from the old version:
+       *
+       * We WAIT for the backend operation.
+       *
+       * The modal only closes if the operation succeeds.
+       */
       await onSubmit(output);
 
       onClose();
-
     } catch (error) {
-
-      console.error(error);
-
-      alert(
-        error?.response?.data?.message ||
-        error?.message ||
-        'Operation failed.'
+      console.error(
+        "Form submission failed:",
+        error
       );
 
+      setSubmitError(
+        error?.message ||
+          "Unable to save the changes."
+      );
     } finally {
-
-      setSaving(false);
-
+      setSubmitting(false);
     }
-
   };
 
   return (
-
     <Modal
       title={title}
-      onClose={saving ? () => {} : onClose}
+      onClose={
+        submitting
+          ? undefined
+          : onClose
+      }
       footer={
         <>
           <button
             type="button"
             className="secondary"
-            disabled={saving}
             onClick={onClose}
+            disabled={submitting}
           >
             Cancel
           </button>
@@ -134,130 +212,142 @@ export default function FormModal({
           <button
             type="submit"
             form="form-modal"
-            disabled={saving}
+            disabled={submitting}
           >
-            {saving ? 'Saving...' : submitLabel}
+            {submitting
+              ? "Saving..."
+              : submitLabel}
           </button>
         </>
       }
     >
-
       <form
         id="form-modal"
-        className="form-grid"
         onSubmit={handleSubmit}
+        className="form-grid"
       >
-
         {fields.map((field) => (
-
           <div
             key={field.name}
             className={
-              field.type === 'checkbox'
-                ? 'form-field check'
-                : 'form-field'
+              field.type === "checkbox"
+                ? "form-field check"
+                : "form-field"
             }
           >
-
-            {field.type === 'checkbox' ? (
-
+            {field.type === "checkbox" ? (
               <label className="check-label">
-
                 <input
                   type="checkbox"
-                  checked={!!values[field.name]}
-                  onChange={(e) =>
-                    setValue(field.name, e.target.checked)
+                  checked={
+                    !!values[field.name]
                   }
+                  onChange={(event) =>
+                    set(
+                      field.name,
+                      event.target.checked
+                    )
+                  }
+                  disabled={submitting}
                 />
 
                 {field.label}
-
               </label>
-
             ) : (
-
               <>
-
-                <label htmlFor={field.name}>
+                <label
+                  htmlFor={field.name}
+                >
                   {field.label}
 
                   {field.required && (
-                    <span className="req"> *</span>
+                    <span className="req">
+                      {" "}
+                      *
+                    </span>
                   )}
                 </label>
 
-                {field.type === 'select' ? (
-
+                {field.type ===
+                "select" ? (
                   <select
                     id={field.name}
-                    value={values[field.name]}
-                    onChange={(e) =>
-                      setValue(field.name, e.target.value)
+                    value={
+                      values[field.name]
                     }
+                    onChange={(event) =>
+                      set(
+                        field.name,
+                        event.target.value
+                      )
+                    }
+                    disabled={submitting}
                   >
-
-                    {field.options.map((option) => (
-
-                      <option
-                        key={option.value}
-                        value={option.value}
-                      >
-                        {option.label}
-                      </option>
-
-                    ))}
-
+                    {field.options?.map(
+                      (option) => (
+                        <option
+                          key={
+                            option.value
+                          }
+                          value={
+                            option.value
+                          }
+                        >
+                          {option.label}
+                        </option>
+                      )
+                    )}
                   </select>
-
                 ) : (
-
                   <input
                     id={field.name}
                     type={
-                      field.type === 'number'
-                        ? 'number'
-                        : field.type === 'email'
-                        ? 'email'
-                        : 'text'
+                      field.type ===
+                      "number"
+                        ? "number"
+                        : field.type ===
+                          "email"
+                          ? "email"
+                          : "text"
                     }
-                    value={values[field.name]}
-                    placeholder={field.placeholder}
+                    value={
+                      values[field.name]
+                    }
+                    placeholder={
+                      field.placeholder
+                    }
                     min={field.min}
+                    max={field.max}
                     step={field.step}
-                    onChange={(e) =>
-                      setValue(field.name, e.target.value)
+                    onChange={(event) =>
+                      set(
+                        field.name,
+                        event.target.value
+                      )
                     }
+                    disabled={submitting}
                   />
-
                 )}
 
                 {errors[field.name] && (
-
-                  <div
-                    style={{
-                      color: '#dc2626',
-                      fontSize: 12,
-                      marginTop: 4
-                    }}
-                  >
+                  <span className="field-error">
                     {errors[field.name]}
-                  </div>
-
+                  </span>
                 )}
-
               </>
-
             )}
-
           </div>
-
         ))}
 
+        {submitError && (
+          <div
+            className="login-error"
+            role="alert"
+          >
+            {submitError}
+          </div>
+        )}
       </form>
-
     </Modal>
-
   );
-
 }
