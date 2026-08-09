@@ -1,41 +1,83 @@
 import { useState } from "react";
-import { useNavigate, useLocation, Navigate } from "react-router-dom";
-import { useAuth, DEMO_USERS } from "../auth/AuthContext";
+import {
+  useLocation,
+  useNavigate,
+  Navigate,
+  Link,
+} from "react-router-dom";
+
+import { useAuth } from "../auth/AuthContext";
 
 export default function Login() {
-  const { user, login } = useAuth();
+  const {
+    user,
+    login,
+    loading: authLoading,
+  } = useAuth();
 
   const navigate = useNavigate();
   const location = useLocation();
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const from = location.state?.from?.pathname || "/";
+  const from =
+    location.state?.from?.pathname || "/";
 
-  if (user) {
-    return <Navigate to={from} replace />;
+  /*
+   * Already authenticated.
+   */
+  if (user && !authLoading) {
+    return (
+      <Navigate
+        to={from}
+        replace
+      />
+    );
   }
 
-  const submit = (e) => {
-    e.preventDefault();
+  const submit = async (event) => {
+    event.preventDefault();
+
+    if (loading) return;
 
     setError("");
+    setLoading(true);
 
-    const result = login(username, password);
+    try {
+      const result = await login(
+        username.trim(),
+        password
+      );
 
-    if (result.ok) {
-      navigate(from, { replace: true });
-    } else {
-      setError(result.error);
+      if (result?.ok) {
+        navigate(from, {
+          replace: true,
+        });
+
+        return;
+      }
+
+      setError(
+        result?.error ||
+          "Invalid username or password."
+      );
+    } catch (err) {
+      console.error(
+        "Login failed:",
+        err
+      );
+
+      setError(
+        err?.message ||
+          "Unable to connect to the server."
+      );
+    } finally {
+      setLoading(false);
     }
-  };
-
-  const pickDemoUser = (demoUser) => {
-    setUsername(demoUser.username);
-    setPassword("demo");
-    setError("");
   };
 
   return (
@@ -43,16 +85,25 @@ export default function Login() {
       <div className="login-card">
 
         <div className="login-brand">
-          📦 <span>IMS</span>
+          <span className="login-brand-icon">
+            📦
+          </span>
+
+          <span>IMS</span>
         </div>
 
         <div className="login-heading">
           <h1>Sign in</h1>
-          <p>Inventory Management System</p>
+
+          <p>
+            Inventory Management System
+          </p>
         </div>
 
-        <form onSubmit={submit} className="login-form">
-
+        <form
+          className="login-form"
+          onSubmit={submit}
+        >
           <div className="form-field">
             <label htmlFor="username">
               Username
@@ -60,11 +111,18 @@ export default function Login() {
 
             <input
               id="username"
+              name="username"
               type="text"
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={(event) =>
+                setUsername(
+                  event.target.value
+                )
+              }
               placeholder="Enter username"
               autoComplete="username"
+              autoFocus
+              disabled={loading}
               required
             />
           </div>
@@ -76,17 +134,26 @@ export default function Login() {
 
             <input
               id="password"
+              name="password"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(event) =>
+                setPassword(
+                  event.target.value
+                )
+              }
               placeholder="Enter password"
               autoComplete="current-password"
+              disabled={loading}
               required
             />
           </div>
 
           {error && (
-            <div className="login-error">
+            <div
+              className="login-error"
+              role="alert"
+            >
               {error}
             </div>
           )}
@@ -94,32 +161,26 @@ export default function Login() {
           <button
             type="submit"
             className="login-submit"
+            disabled={
+              loading ||
+              !username.trim() ||
+              !password
+            }
           >
-            Sign in
+            {loading
+              ? "Signing in..."
+              : "Sign in"}
           </button>
         </form>
 
-        <div className="login-demo">
-          <p>
-            Demo accounts
-            <span>
-              {" "}
-              (password: <code>demo</code>)
-            </span>
-          </p>
+        <div className="login-register">
+          <span>
+            Don't have an account?
+          </span>
 
-          <div className="login-roles">
-            {DEMO_USERS.map((demoUser) => (
-              <button
-                key={demoUser.username}
-                type="button"
-                className="secondary"
-                onClick={() => pickDemoUser(demoUser)}
-              >
-                {demoUser.role}
-              </button>
-            ))}
-          </div>
+          <Link to="/register">
+            Create an account
+          </Link>
         </div>
 
       </div>
