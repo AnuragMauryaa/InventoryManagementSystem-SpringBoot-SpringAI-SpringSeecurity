@@ -1,37 +1,50 @@
-# ==========================================
-# Stage 1: Build Spring Boot application
-# ==========================================
-
-FROM maven:3.9.9-eclipse-temurin-21 AS build
-
-WORKDIR /app
-
-# Copy Maven configuration
-COPY pom.xml .
-
-# Your repository stores backend Java sources in /java
-# Map them to Maven's standard /src/main/java
-COPY java ./src/main/java
-
-# Your repository stores resources in /resources
-# Map them to Maven's standard /src/main/resources
-COPY resources ./src/main/resources
-
-# Build Spring Boot application
-RUN mvn clean package -DskipTests
-
+spring.application.name=inventory-management
 
 # ==========================================
-# Stage 2: Run Spring Boot application
+# DATABASE
 # ==========================================
 
-FROM eclipse-temurin:21-jre
+spring.datasource.url=${DATABASE_URL:jdbc:mysql://localhost:3306/inventory_management}
+spring.datasource.username=${DATABASE_USERNAME:root}
+spring.datasource.password=${DATABASE_PASSWORD:manager}
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
 
-WORKDIR /app
+# ==========================================
+# JPA
+# ==========================================
 
-# Copy the generated Spring Boot JAR
-COPY --from=build /app/target/*.jar app.jar
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect
 
+# ==========================================
+# JWT
+# ==========================================
+
+jwt.secret=${JWT_SECRET:4Lz2jN8qYvP6rXs1Km9HwEa5UfBcD7RgTtQxVzMnYpLs3JkFhG}
+jwt.expiration=${JWT_EXPIRATION:86400000}
+
+# ==========================================
+# SPRING AI / GROQ
+# ==========================================
+
+spring.ai.openai.base-url=${GROQ_BASE_URL:https://api.groq.com/openai/v1}
+spring.ai.openai.api-key=${GROQ_API_KEY:}
+spring.ai.openai.chat.options.model=${GROQ_MODEL:llama-3.3-70b-versatile}
+spring.ai.openai.chat.options.temperature=${GROQ_TEMPERATURE:0.3}
+
+# ==========================================
+# CORS
+# ==========================================
+
+app.frontend-url=${FRONTEND_URL:http://localhost:5173}
+
+# ==========================================
+# SERVER
+# ==========================================
+
+server.port=${PORT:8080}
 EXPOSE 8080
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
