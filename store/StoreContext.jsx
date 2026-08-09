@@ -4,655 +4,862 @@ import {
   useEffect,
   useMemo,
   useState,
-  useCallback,
 } from "react";
 
-import {
-  productApi,
-  inventoryApi,
-  warehouseApi,
-  supplierApi,
-  customerApi,
-  purchaseOrderApi,
-  salesOrderApi,
-} from "../api/api";
+import { api } from "../api/api";
 
-const StoreContext = createContext(null);
+const StoreContext =
+  createContext(null);
 
-export function StoreProvider({ children }) {
-  const [products, setProducts] = useState([]);
-  const [warehouses, setWarehouses] = useState([]);
-  const [suppliers, setSuppliers] = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [purchaseOrders, setPurchaseOrders] = useState([]);
-  const [salesOrders, setSalesOrders] = useState([]);
-  const [stockLevels, setStockLevels] = useState([]);
-  const [stockMovements, setStockMovements] = useState([]);
+function asArray(data) {
+  if (Array.isArray(data)) {
+    return data;
+  }
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  if (Array.isArray(data?.content)) {
+    return data.content;
+  }
 
-  /*
-   * Normalize backend responses.
-   *
-   * This allows the frontend to work with either:
-   *
-   * [
-   *   {...},
-   *   {...}
-   * ]
-   *
-   * or common Spring response wrappers such as:
-   *
-   * {
-   *   content: [...]
-   * }
-   *
-   * {
-   *   data: [...]
-   * }
-   */
-  const extractList = useCallback((response) => {
-    if (!response) return [];
+  if (Array.isArray(data?.data)) {
+    return data.data;
+  }
 
-    if (Array.isArray(response)) {
-      return response;
-    }
+  if (Array.isArray(data?.items)) {
+    return data.items;
+  }
 
-    if (Array.isArray(response.content)) {
-      return response.content;
-    }
+  if (Array.isArray(data?.results)) {
+    return data.results;
+  }
 
-    if (Array.isArray(response.data)) {
-      return response.data;
-    }
+  return [];
+}
 
-    if (Array.isArray(response.items)) {
-      return response.items;
-    }
+function normalizeId(value) {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return value;
+  }
 
-    return [];
-  }, []);
+  return Number(value);
+}
 
-  /*
-   * Load all master data.
-   *
-   * This replaces dummyData.js as the source of truth.
-   */
-  const loadAll = useCallback(async () => {
+function normalizeProduct(item) {
+  return {
+    ...item,
+
+    id: normalizeId(
+      item.id ??
+        item.productId
+    ),
+
+    productId:
+      normalizeId(
+        item.productId ??
+          item.id
+      ),
+
+    sku:
+      item.sku || "",
+
+    name:
+      item.name || "",
+
+    category:
+      item.category?.name ||
+      item.category ||
+      "",
+
+    unit:
+      item.unit?.abbreviation ||
+      item.unit?.name ||
+      item.unit ||
+      "",
+
+    costPrice:
+      Number(
+        item.costPrice ??
+          item.cost_price ??
+          0
+      ),
+
+    sellPrice:
+      Number(
+        item.sellPrice ??
+          item.sell_price ??
+          0
+      ),
+
+    onHand:
+      Number(
+        item.onHand ??
+          item.on_hand ??
+          item.quantity ??
+          0
+      ),
+
+    reorderLevel:
+      Number(
+        item.reorderLevel ??
+          item.reorder_level ??
+          0
+      ),
+
+    active:
+      item.active !== false,
+  };
+}
+
+function normalizeWarehouse(item) {
+  return {
+    ...item,
+
+    id: normalizeId(
+      item.id ??
+        item.warehouseId
+    ),
+
+    warehouseId:
+      normalizeId(
+        item.warehouseId ??
+          item.id
+      ),
+
+    name:
+      item.name || "",
+
+    code:
+      item.code || "",
+
+    location:
+      item.location || "",
+
+    active:
+      item.active !== false,
+  };
+}
+
+function normalizeSupplier(item) {
+  return {
+    ...item,
+
+    id: normalizeId(
+      item.id ??
+        item.supplierId
+    ),
+
+    supplierId:
+      normalizeId(
+        item.supplierId ??
+          item.id
+      ),
+
+    name:
+      item.name || "",
+
+    email:
+      item.email || "",
+
+    phone:
+      item.phone || "",
+
+    active:
+      item.active !== false,
+  };
+}
+
+function normalizeCustomer(item) {
+  return {
+    ...item,
+
+    id: normalizeId(
+      item.id ??
+        item.customerId
+    ),
+
+    customerId:
+      normalizeId(
+        item.customerId ??
+          item.id
+      ),
+
+    name:
+      item.name || "",
+
+    email:
+      item.email || "",
+
+    phone:
+      item.phone || "",
+  };
+}
+
+function normalizeOrder(item) {
+  return {
+    ...item,
+
+    id: normalizeId(
+      item.id ??
+        item.orderId
+    ),
+
+    total:
+      Number(
+        item.total ?? 0
+      ),
+
+    status:
+      item.status ||
+      "DRAFT",
+  };
+}
+
+function normalizeStock(item) {
+  return {
+    ...item,
+
+    id: normalizeId(
+      item.id ??
+        item.inventoryId
+    ),
+
+    productId:
+      normalizeId(
+        item.productId ??
+          item.product?.id
+      ),
+
+    warehouseId:
+      normalizeId(
+        item.warehouseId ??
+          item.warehouse?.id
+      ),
+
+    sku:
+      item.sku ||
+      item.product?.sku ||
+      "",
+
+    name:
+      item.name ||
+      item.product?.name ||
+      "",
+
+    quantity:
+      Number(
+        item.quantity ??
+          item.onHand ??
+          0
+      ),
+
+    reserved:
+      Number(
+        item.reserved ?? 0
+      ),
+  };
+}
+
+function normalizeMovement(item) {
+  return {
+    ...item,
+
+    id: normalizeId(
+      item.id ??
+        item.movementId
+    ),
+
+    productId:
+      normalizeId(
+        item.productId ??
+          item.product?.id
+      ),
+
+    warehouseId:
+      normalizeId(
+        item.warehouseId ??
+          item.warehouse?.id
+      ),
+
+    sku:
+      item.sku ||
+      item.product?.sku ||
+      "",
+
+    name:
+      item.name ||
+      item.product?.name ||
+      "",
+
+    quantity:
+      Number(
+        item.quantity ?? 0
+      ),
+
+    type:
+      item.type || "",
+
+    ref:
+      item.ref ||
+      item.reference ||
+      "",
+
+    by:
+      item.by ||
+      item.createdBy ||
+      "",
+  };
+}
+
+function unwrapEntity(data) {
+  return (
+    data?.data ||
+    data?.content ||
+    data
+  );
+}
+
+export function StoreProvider({
+  children,
+}) {
+  const [products, setProducts] =
+    useState([]);
+
+  const [warehouses, setWarehouses] =
+    useState([]);
+
+  const [suppliers, setSuppliers] =
+    useState([]);
+
+  const [customers, setCustomers] =
+    useState([]);
+
+  const [
+    purchaseOrders,
+    setPurchaseOrders,
+  ] = useState([]);
+
+  const [
+    salesOrders,
+    setSalesOrders,
+  ] = useState([]);
+
+  const [
+    stockLevels,
+    setStockLevels,
+  ] = useState([]);
+
+  const [
+    stockMovements,
+    setStockMovements,
+  ] = useState([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState("");
+
+  const loadAll = async () => {
     setLoading(true);
-    setError(null);
+    setError("");
 
     try {
-      const [
-        productsResponse,
-        warehousesResponse,
-        suppliersResponse,
-        customersResponse,
-        purchaseOrdersResponse,
-        salesOrdersResponse,
-        inventoryResponse,
-        movementsResponse,
-      ] = await Promise.all([
-        productApi.getAll(),
-        warehouseApi.getAll(),
-        supplierApi.getAll(),
-        customerApi.getAll(),
-        purchaseOrderApi.getAll(),
-        salesOrderApi.getAll(),
-        inventoryApi.getAll(),
-        inventoryApi.getMovements(),
-      ]);
+      const results =
+        await Promise.allSettled([
+          api.get("/api/products"),
+          api.get("/api/warehouses"),
+          api.get("/api/suppliers"),
+          api.get("/api/customers"),
+          api.get("/api/purchase-orders"),
+          api.get("/api/sales-orders"),
+          api.get("/api/inventory"),
+          api.get(
+            "/api/inventory/movements"
+          ),
+        ]);
 
-      setProducts(extractList(productsResponse));
-      setWarehouses(extractList(warehousesResponse));
-      setSuppliers(extractList(suppliersResponse));
-      setCustomers(extractList(customersResponse));
-      setPurchaseOrders(extractList(purchaseOrdersResponse));
-      setSalesOrders(extractList(salesOrdersResponse));
-      setStockLevels(extractList(inventoryResponse));
-      setStockMovements(extractList(movementsResponse));
+      const [
+        productResult,
+        warehouseResult,
+        supplierResult,
+        customerResult,
+        purchaseResult,
+        salesResult,
+        inventoryResult,
+        movementResult,
+      ] = results;
+
+      /*
+       * We intentionally handle each collection
+       * independently.
+       *
+       * One unavailable optional endpoint should
+       * not erase all other working data.
+       */
+      if (
+        productResult.status ===
+        "fulfilled"
+      ) {
+        setProducts(
+          asArray(
+            productResult.value
+          ).map(
+            normalizeProduct
+          )
+        );
+      }
+
+      if (
+        warehouseResult.status ===
+        "fulfilled"
+      ) {
+        setWarehouses(
+          asArray(
+            warehouseResult.value
+          ).map(
+            normalizeWarehouse
+          )
+        );
+      }
+
+      if (
+        supplierResult.status ===
+        "fulfilled"
+      ) {
+        setSuppliers(
+          asArray(
+            supplierResult.value
+          ).map(
+            normalizeSupplier
+          )
+        );
+      }
+
+      if (
+        customerResult.status ===
+        "fulfilled"
+      ) {
+        setCustomers(
+          asArray(
+            customerResult.value
+          ).map(
+            normalizeCustomer
+          )
+        );
+      }
+
+      if (
+        purchaseResult.status ===
+        "fulfilled"
+      ) {
+        setPurchaseOrders(
+          asArray(
+            purchaseResult.value
+          ).map(
+            normalizeOrder
+          )
+        );
+      }
+
+      if (
+        salesResult.status ===
+        "fulfilled"
+      ) {
+        setSalesOrders(
+          asArray(
+            salesResult.value
+          ).map(
+            normalizeOrder
+          )
+        );
+      }
+
+      if (
+        inventoryResult.status ===
+        "fulfilled"
+      ) {
+        setStockLevels(
+          asArray(
+            inventoryResult.value
+          ).map(
+            normalizeStock
+          )
+        );
+      }
+
+      if (
+        movementResult.status ===
+        "fulfilled"
+      ) {
+        setStockMovements(
+          asArray(
+            movementResult.value
+          ).map(
+            normalizeMovement
+          )
+        );
+      }
+
+      const failures =
+        results.filter(
+          (result) =>
+            result.status ===
+            "rejected"
+        );
+
+      if (
+        failures.length ===
+          results.length &&
+        results.length > 0
+      ) {
+        throw (
+          failures[0].reason ||
+          new Error(
+            "Unable to load application data."
+          )
+        );
+      }
     } catch (err) {
-      console.error("Failed to load inventory data:", err);
+      console.error(
+        "Failed to load IMS data:",
+        err
+      );
 
       setError(
         err?.message ||
-          "Unable to load inventory data."
+          "Unable to load application data."
       );
     } finally {
       setLoading(false);
     }
-  }, [extractList]);
+  };
 
-  /*
-   * Initial load.
-   *
-   * AuthProvider runs above StoreProvider, and RequireAuth
-   * protects the application routes.
-   */
   useEffect(() => {
     loadAll();
-  }, [loadAll]);
+  }, []);
 
-  /* =========================================================
-     PRODUCTS
-     ========================================================= */
-
-  const addProduct = useCallback(
+  const addProduct =
     async (product) => {
-      const created = await productApi.create(product);
-
-      /*
-       * Some APIs return the created object directly,
-       * while others return { data: created }.
-       */
-      const newProduct =
-        created?.data || created;
-
-      if (newProduct) {
-        setProducts((prev) => [
-          ...prev,
-          newProduct,
-        ]);
-      } else {
-        await loadAll();
-      }
-
-      return newProduct;
-    },
-    [loadAll]
-  );
-
-  const updateProduct = useCallback(
-    async (id, product) => {
-      const updated = await productApi.update(
-        id,
-        product
-      );
-
-      const updatedProduct =
-        updated?.data || updated;
-
-      if (updatedProduct) {
-        setProducts((prev) =>
-          prev.map((item) =>
-            item.id === id
-              ? updatedProduct
-              : item
-          )
+      const response =
+        await api.post(
+          "/api/products",
+          product
         );
-      } else {
-        await loadAll();
-      }
 
-      return updatedProduct;
-    },
-    [loadAll]
-  );
+      const created =
+        normalizeProduct(
+          unwrapEntity(response)
+        );
 
-  const deleteProduct = useCallback(
-    async (id) => {
-      await productApi.delete(id);
-
-      setProducts((prev) =>
-        prev.filter((item) => item.id !== id)
+      setProducts(
+        (previous) => [
+          created,
+          ...previous,
+        ]
       );
-    },
-    []
-  );
 
-  /* =========================================================
-     WAREHOUSES
-     ========================================================= */
+      return created;
+    };
 
-  const addWarehouse = useCallback(
+  const updateProduct =
+    async (
+      id,
+      product
+    ) => {
+      const response =
+        await api.put(
+          `/api/products/${id}`,
+          product
+        );
+
+      const updated =
+        normalizeProduct(
+          unwrapEntity(response)
+        );
+
+      setProducts(
+        (previous) =>
+          previous.map(
+            (item) =>
+              item.id ===
+              Number(id)
+                ? updated
+                : item
+          )
+      );
+
+      return updated;
+    };
+
+  const deleteProduct =
+    async (id) => {
+      await api.delete(
+        `/api/products/${id}`
+      );
+
+      setProducts(
+        (previous) =>
+          previous.filter(
+            (item) =>
+              item.id !==
+              Number(id)
+          )
+      );
+    };
+
+  const addWarehouse =
     async (warehouse) => {
+      const response =
+        await api.post(
+          "/api/warehouses",
+          warehouse
+        );
+
       const created =
-        await warehouseApi.create(
-          warehouse
+        normalizeWarehouse(
+          unwrapEntity(response)
         );
 
-      const newWarehouse =
-        created?.data || created;
-
-      if (newWarehouse) {
-        setWarehouses((prev) => [
-          ...prev,
-          newWarehouse,
-        ]);
-      } else {
-        await loadAll();
-      }
-
-      return newWarehouse;
-    },
-    [loadAll]
-  );
-
-  const updateWarehouse = useCallback(
-    async (id, warehouse) => {
-      const updated =
-        await warehouseApi.update(
-          id,
-          warehouse
-        );
-
-      const updatedWarehouse =
-        updated?.data || updated;
-
-      if (updatedWarehouse) {
-        setWarehouses((prev) =>
-          prev.map((item) =>
-            item.id === id
-              ? updatedWarehouse
-              : item
-          )
-        );
-      } else {
-        await loadAll();
-      }
-
-      return updatedWarehouse;
-    },
-    [loadAll]
-  );
-
-  const deleteWarehouse = useCallback(
-    async (id) => {
-      await warehouseApi.delete(id);
-
-      setWarehouses((prev) =>
-        prev.filter((item) => item.id !== id)
+      setWarehouses(
+        (previous) => [
+          created,
+          ...previous,
+        ]
       );
-    },
-    []
-  );
 
-  /* =========================================================
-     SUPPLIERS
-     ========================================================= */
+      return created;
+    };
 
-  const addSupplier = useCallback(
+  const addSupplier =
     async (supplier) => {
+      const response =
+        await api.post(
+          "/api/suppliers",
+          supplier
+        );
+
       const created =
-        await supplierApi.create(
-          supplier
+        normalizeSupplier(
+          unwrapEntity(response)
         );
 
-      const newSupplier =
-        created?.data || created;
-
-      if (newSupplier) {
-        setSuppliers((prev) => [
-          ...prev,
-          newSupplier,
-        ]);
-      } else {
-        await loadAll();
-      }
-
-      return newSupplier;
-    },
-    [loadAll]
-  );
-
-  const updateSupplier = useCallback(
-    async (id, supplier) => {
-      const updated =
-        await supplierApi.update(
-          id,
-          supplier
-        );
-
-      const updatedSupplier =
-        updated?.data || updated;
-
-      if (updatedSupplier) {
-        setSuppliers((prev) =>
-          prev.map((item) =>
-            item.id === id
-              ? updatedSupplier
-              : item
-          )
-        );
-      } else {
-        await loadAll();
-      }
-
-      return updatedSupplier;
-    },
-    [loadAll]
-  );
-
-  const deleteSupplier = useCallback(
-    async (id) => {
-      await supplierApi.delete(id);
-
-      setSuppliers((prev) =>
-        prev.filter((item) => item.id !== id)
+      setSuppliers(
+        (previous) => [
+          created,
+          ...previous,
+        ]
       );
-    },
-    []
-  );
 
-  /* =========================================================
-     CUSTOMERS
-     ========================================================= */
+      return created;
+    };
 
-  const addCustomer = useCallback(
+  const addCustomer =
     async (customer) => {
-      const created =
-        await customerApi.create(
+      const response =
+        await api.post(
+          "/api/customers",
           customer
         );
 
-      const newCustomer =
-        created?.data || created;
-
-      if (newCustomer) {
-        setCustomers((prev) => [
-          ...prev,
-          newCustomer,
-        ]);
-      } else {
-        await loadAll();
-      }
-
-      return newCustomer;
-    },
-    [loadAll]
-  );
-
-  const updateCustomer = useCallback(
-    async (id, customer) => {
-      const updated =
-        await customerApi.update(
-          id,
-          customer
-        );
-
-      const updatedCustomer =
-        updated?.data || updated;
-
-      if (updatedCustomer) {
-        setCustomers((prev) =>
-          prev.map((item) =>
-            item.id === id
-              ? updatedCustomer
-              : item
-          )
-        );
-      } else {
-        await loadAll();
-      }
-
-      return updatedCustomer;
-    },
-    [loadAll]
-  );
-
-  const deleteCustomer = useCallback(
-    async (id) => {
-      await customerApi.delete(id);
-
-      setCustomers((prev) =>
-        prev.filter((item) => item.id !== id)
-      );
-    },
-    []
-  );
-
-  /* =========================================================
-     PURCHASE ORDERS
-     ========================================================= */
-
-  const addPurchaseOrder = useCallback(
-    async (purchaseOrder) => {
       const created =
-        await purchaseOrderApi.create(
-          purchaseOrder
+        normalizeCustomer(
+          unwrapEntity(response)
         );
 
-      const newOrder =
-        created?.data || created;
-
-      if (newOrder) {
-        setPurchaseOrders((prev) => [
-          ...prev,
-          newOrder,
-        ]);
-      } else {
-        await loadAll();
-      }
-
-      return newOrder;
-    },
-    [loadAll]
-  );
-
-  const updatePurchaseOrder = useCallback(
-    async (id, purchaseOrder) => {
-      const updated =
-        await purchaseOrderApi.update(
-          id,
-          purchaseOrder
-        );
-
-      const updatedOrder =
-        updated?.data || updated;
-
-      if (updatedOrder) {
-        setPurchaseOrders((prev) =>
-          prev.map((item) =>
-            item.id === id
-              ? updatedOrder
-              : item
-          )
-        );
-      } else {
-        await loadAll();
-      }
-
-      return updatedOrder;
-    },
-    [loadAll]
-  );
-
-  const deletePurchaseOrder = useCallback(
-    async (id) => {
-      await purchaseOrderApi.delete(id);
-
-      setPurchaseOrders((prev) =>
-        prev.filter((item) => item.id !== id)
+      setCustomers(
+        (previous) => [
+          created,
+          ...previous,
+        ]
       );
-    },
-    []
-  );
 
-  /* =========================================================
-     SALES ORDERS
-     ========================================================= */
+      return created;
+    };
 
-  const addSalesOrder = useCallback(
-    async (salesOrder) => {
+  const addPurchaseOrder =
+    async (order) => {
+      const response =
+        await api.post(
+          "/api/purchase-orders",
+          order
+        );
+
       const created =
-        await salesOrderApi.create(
-          salesOrder
+        normalizeOrder(
+          unwrapEntity(response)
         );
 
-      const newOrder =
-        created?.data || created;
-
-      if (newOrder) {
-        setSalesOrders((prev) => [
-          ...prev,
-          newOrder,
-        ]);
-      } else {
-        await loadAll();
-      }
-
-      return newOrder;
-    },
-    [loadAll]
-  );
-
-  const updateSalesOrder = useCallback(
-    async (id, salesOrder) => {
-      const updated =
-        await salesOrderApi.update(
-          id,
-          salesOrder
-        );
-
-      const updatedOrder =
-        updated?.data || updated;
-
-      if (updatedOrder) {
-        setSalesOrders((prev) =>
-          prev.map((item) =>
-            item.id === id
-              ? updatedOrder
-              : item
-          )
-        );
-      } else {
-        await loadAll();
-      }
-
-      return updatedOrder;
-    },
-    [loadAll]
-  );
-
-  const deleteSalesOrder = useCallback(
-    async (id) => {
-      await salesOrderApi.delete(id);
-
-      setSalesOrders((prev) =>
-        prev.filter((item) => item.id !== id)
+      setPurchaseOrders(
+        (previous) => [
+          created,
+          ...previous,
+        ]
       );
-    },
-    []
-  );
 
-  /* =========================================================
-     INVENTORY
-     ========================================================= */
+      return created;
+    };
 
-  const adjustStock = useCallback(
+  const addSalesOrder =
+    async (order) => {
+      const response =
+        await api.post(
+          "/api/sales-orders",
+          order
+        );
+
+      const created =
+        normalizeOrder(
+          unwrapEntity(response)
+        );
+
+      setSalesOrders(
+        (previous) => [
+          created,
+          ...previous,
+        ]
+      );
+
+      return created;
+    };
+
+  const adjustStock =
     async (movement) => {
-      const result =
-        await inventoryApi.adjustStock(
+      const response =
+        await api.post(
+          "/api/inventory/movements",
           movement
         );
 
       /*
-       * Inventory adjustments affect multiple pieces
-       * of displayed data, so reload inventory after
-       * the backend successfully processes the movement.
+       * Reload inventory-related collections after
+       * the backend transaction completes.
+       *
+       * This is important because stock adjustment
+       * changes more than one piece of state.
        */
       const [
+        productsResponse,
         inventoryResponse,
         movementsResponse,
-        productsResponse,
       ] = await Promise.all([
-        inventoryApi.getAll(),
-        inventoryApi.getMovements(),
-        productApi.getAll(),
+        api.get("/api/products"),
+        api.get("/api/inventory"),
+        api.get(
+          "/api/inventory/movements"
+        ),
       ]);
 
+      setProducts(
+        asArray(
+          productsResponse
+        ).map(
+          normalizeProduct
+        )
+      );
+
       setStockLevels(
-        extractList(inventoryResponse)
+        asArray(
+          inventoryResponse
+        ).map(
+          normalizeStock
+        )
       );
 
       setStockMovements(
-        extractList(movementsResponse)
+        asArray(
+          movementsResponse
+        ).map(
+          normalizeMovement
+        )
       );
 
-      setProducts(
-        extractList(productsResponse)
-      );
-
-      return result;
-    },
-    [extractList]
-  );
-
-  /* =========================================================
-     DERIVED DATA
-     ========================================================= */
-
-  const lowStockProducts = useMemo(() => {
-    return products.filter((product) => {
-      const onHand =
-        Number(product.onHand ?? 0);
-
-      const reorderLevel =
-        Number(product.reorderLevel ?? 0);
-
-      return (
-        product.active !== false &&
-        onHand <= reorderLevel
-      );
-    });
-  }, [products]);
-
-  const dashboardStats = useMemo(() => {
-    const totalProducts =
-      products.length;
-
-    const totalWarehouses =
-      warehouses.filter(
-        (warehouse) =>
-          warehouse.active !== false
-      ).length;
-
-    const lowStockCount =
-      lowStockProducts.length;
-
-    const openPurchaseOrders =
-      purchaseOrders.filter(
-        (order) =>
-          order.status !== "RECEIVED" &&
-          order.status !== "CANCELLED"
-      ).length;
-
-    const openSalesOrders =
-      salesOrders.filter(
-        (order) =>
-          order.status !== "SHIPPED" &&
-          order.status !== "CANCELLED"
-      ).length;
-
-    const stockValue =
-      products.reduce(
-        (sum, product) =>
-          sum +
-          Number(
-            product.costPrice ?? 0
-          ) *
-            Number(
-              product.onHand ?? 0
-            ),
-        0
-      );
-
-    return {
-      totalProducts,
-      totalWarehouses,
-      lowStockCount,
-      openPurchaseOrders,
-      openSalesOrders,
-      stockValue,
+      return response;
     };
-  }, [
-    products,
-    warehouses,
-    lowStockProducts,
-    purchaseOrders,
-    salesOrders,
-  ]);
+
+  const lowStockProducts =
+    useMemo(
+      () =>
+        products.filter(
+          (product) =>
+            product.active &&
+            Number(
+              product.onHand
+            ) <=
+              Number(
+                product.reorderLevel
+              )
+        ),
+      [products]
+    );
+
+  const dashboardStats =
+    useMemo(
+      () => ({
+        totalProducts:
+          products.length,
+
+        totalWarehouses:
+          warehouses.filter(
+            (warehouse) =>
+              warehouse.active
+          ).length,
+
+        lowStockCount:
+          lowStockProducts.length,
+
+        openPurchaseOrders:
+          purchaseOrders.filter(
+            (order) =>
+              ![
+                "RECEIVED",
+                "CANCELLED",
+              ].includes(
+                String(
+                  order.status ||
+                    ""
+                ).toUpperCase()
+              )
+          ).length,
+
+        openSalesOrders:
+          salesOrders.filter(
+            (order) =>
+              ![
+                "SHIPPED",
+                "CANCELLED",
+              ].includes(
+                String(
+                  order.status ||
+                    ""
+                ).toUpperCase()
+              )
+          ).length,
+
+        stockValue:
+          products.reduce(
+            (sum, product) =>
+              sum +
+              Number(
+                product.costPrice ||
+                  0
+              ) *
+                Number(
+                  product.onHand ||
+                    0
+                ),
+            0
+          ),
+      }),
+      [
+        products,
+        warehouses,
+        lowStockProducts,
+        purchaseOrders,
+        salesOrders,
+      ]
+    );
 
   const value = {
     products,
@@ -677,30 +884,19 @@ export function StoreProvider({ children }) {
     deleteProduct,
 
     addWarehouse,
-    updateWarehouse,
-    deleteWarehouse,
-
     addSupplier,
-    updateSupplier,
-    deleteSupplier,
-
     addCustomer,
-    updateCustomer,
-    deleteCustomer,
 
     addPurchaseOrder,
-    updatePurchaseOrder,
-    deletePurchaseOrder,
-
     addSalesOrder,
-    updateSalesOrder,
-    deleteSalesOrder,
 
     adjustStock,
   };
 
   return (
-    <StoreContext.Provider value={value}>
+    <StoreContext.Provider
+      value={value}
+    >
       {children}
     </StoreContext.Provider>
   );
@@ -708,7 +904,9 @@ export function StoreProvider({ children }) {
 
 export function useStore() {
   const context =
-    useContext(StoreContext);
+    useContext(
+      StoreContext
+    );
 
   if (!context) {
     throw new Error(
