@@ -3,7 +3,7 @@ import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
 export default function Register() {
-  const { user, register } = useAuth();
+  const { register } = useAuth();
   const navigate = useNavigate();
   const [values, setValues] = useState({
     fullName: '',
@@ -39,24 +39,20 @@ export default function Register() {
     setSaving(true);
 
     const result = await register({
-      fullName: values.fullName.trim(),
-      username: values.username.trim(),
-      email: values.email.trim(),
-      phone: values.phone.trim() || null,
-      password: values.password,
-      role: values.role, // Pass selected role to backend
-    });
+  fullName: values.fullName.trim(),
+  username: values.username.trim(),
+  email: values.email.trim(),
+  phone: values.phone.trim() || null,
+  password: values.password,
+  role: values.role,
+});
     setSaving(false);
 
     if (result.ok) {
-      navigate('/login', {
-        replace: true,
-        state: { username: values.username, message: 'Account created. Please sign in.' },
-      });
-      return;
-    }
-    setError(result.error);
-  };
+  navigate("/login");
+} else {
+  setError(result.error);
+}
 
   return (
     <div className="login-screen">
