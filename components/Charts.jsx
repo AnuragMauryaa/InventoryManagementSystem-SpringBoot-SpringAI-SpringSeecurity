@@ -1,45 +1,182 @@
-// Dependency-free SVG charts. They scale to their container width via a
-// viewBox + preserveAspectRatio, so they stay responsive on phone and laptop.
+const PALETTE = [
+  "#2563eb",
+  "#16a34a",
+  "#f59e0b",
+  "#dc2626",
+  "#7c3aed",
+  "#0891b2",
+];
 
-const PALETTE = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#db2777'];
+function safeData(data) {
+  if (!Array.isArray(data)) {
+    return [];
+  }
 
-// Vertical bar chart. data: [{ label, value }]
-export function BarChart({ data, height = 220, format = (v) => v }) {
-  const w = 480;
+  return data
+    .filter((item) => item)
+    .map((item) => ({
+      ...item,
+      value: Number(item.value || 0),
+      label: String(item.label ?? ""),
+    }));
+}
+
+function EmptyChart() {
+  return (
+    <div
+      style={{
+        minHeight: 180,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "var(--muted)",
+        fontSize: 13,
+      }}
+    >
+      No data available
+    </div>
+  );
+}
+
+/* -------------------------------------------------------
+ * BAR CHART
+ * data: [{ label, value }]
+ * ----------------------------------------------------- */
+
+export function BarChart({
+  data = [],
+  height = 220,
+  format = (value) => value,
+}) {
+  const rows = safeData(data);
+
+  if (rows.length === 0) {
+    return <EmptyChart />;
+  }
+
+  const width = 480;
   const h = height;
-  const pad = { top: 16, right: 12, bottom: 36, left: 40 };
-  const innerW = w - pad.left - pad.right;
-  const innerH = h - pad.top - pad.bottom;
-  const max = Math.max(1, ...data.map((d) => d.value));
-  const barW = innerW / data.length;
+
+  const pad = {
+    top: 16,
+    right: 16,
+    bottom: 36,
+    left: 48,
+  };
+
+  const innerWidth =
+    width - pad.left - pad.right;
+
+  const innerHeight =
+    h - pad.top - pad.bottom;
+
+  const max = Math.max(
+    1,
+    ...rows.map((item) => item.value)
+  );
+
   const ticks = 4;
 
+  const barWidth =
+    innerWidth / rows.length;
+
   return (
-    <svg className="chart" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" role="img">
-      {/* y grid + labels */}
-      {Array.from({ length: ticks + 1 }).map((_, i) => {
-        const val = (max / ticks) * i;
-        const y = pad.top + innerH - (innerH * i) / ticks;
+    <svg
+      className="chart"
+      viewBox={`0 0 ${width} ${h}`}
+      preserveAspectRatio="xMidYMid meet"
+      role="img"
+      aria-label="Bar chart"
+    >
+      {Array.from({
+        length: ticks + 1,
+      }).map((_, index) => {
+        const value =
+          (max / ticks) * index;
+
+        const y =
+          pad.top +
+          innerHeight -
+          (innerHeight * index) /
+            ticks;
+
         return (
-          <g key={i}>
-            <line x1={pad.left} y1={y} x2={w - pad.right} y2={y} stroke="#eceff4" />
-            <text x={pad.left - 6} y={y + 4} textAnchor="end" className="chart-axis">
-              {format(Math.round(val))}
+          <g key={index}>
+            <line
+              x1={pad.left}
+              y1={y}
+              x2={
+                width - pad.right
+              }
+              y2={y}
+              stroke="#eceff4"
+            />
+
+            <text
+              x={pad.left - 6}
+              y={y + 4}
+              textAnchor="end"
+              className="chart-axis"
+            >
+              {format(
+                Math.round(value)
+              )}
             </text>
           </g>
         );
       })}
-      {data.map((d, i) => {
-        const bh = (d.value / max) * innerH;
-        const x = pad.left + i * barW + barW * 0.18;
-        const y = pad.top + innerH - bh;
+
+      {rows.map((item, index) => {
+        const barHeight =
+          (item.value / max) *
+          innerHeight;
+
+        const x =
+          pad.left +
+          index * barWidth +
+          barWidth * 0.18;
+
+        const y =
+          pad.top +
+          innerHeight -
+          barHeight;
+
         return (
-          <g key={d.label}>
-            <rect x={x} y={y} width={barW * 0.64} height={bh} rx="4" fill={PALETTE[i % PALETTE.length]}>
-              <title>{`${d.label}: ${format(d.value)}`}</title>
+          <g key={`${item.label}-${index}`}>
+            <rect
+              x={x}
+              y={y}
+              width={barWidth * 0.64}
+              height={Math.max(
+                0,
+                barHeight
+              )}
+              rx="4"
+              fill={
+                PALETTE[
+                  index %
+                    PALETTE.length
+                ]
+              }
+            >
+              <title>
+                {`${item.label}: ${format(
+                  item.value
+                )}`}
+              </title>
             </rect>
-            <text x={pad.left + i * barW + barW / 2} y={h - 14} textAnchor="middle" className="chart-axis">
-              {d.label}
+
+            <text
+              x={
+                pad.left +
+                index * barWidth +
+                barWidth / 2
+              }
+              y={h - 14}
+              textAnchor="middle"
+              className="chart-axis"
+            >
+              {item.label}
             </text>
           </g>
         );
@@ -48,52 +185,214 @@ export function BarChart({ data, height = 220, format = (v) => v }) {
   );
 }
 
-// Smooth-ish line chart. data: [{ label, value }]
-export function LineChart({ data, height = 220, format = (v) => v, color = '#2563eb' }) {
-  const w = 480;
+/* -------------------------------------------------------
+ * LINE CHART
+ * data: [{ label, value }]
+ * ----------------------------------------------------- */
+
+export function LineChart({
+  data = [],
+  height = 220,
+  format = (value) => value,
+}) {
+  const rows = safeData(data);
+
+  if (rows.length === 0) {
+    return <EmptyChart />;
+  }
+
+  const width = 480;
   const h = height;
-  const pad = { top: 16, right: 16, bottom: 36, left: 44 };
-  const innerW = w - pad.left - pad.right;
-  const innerH = h - pad.top - pad.bottom;
-  const max = Math.max(1, ...data.map((d) => d.value));
-  const stepX = data.length > 1 ? innerW / (data.length - 1) : 0;
-  const pts = data.map((d, i) => ({
-    x: pad.left + i * stepX,
-    y: pad.top + innerH - (d.value / max) * innerH,
-    d,
-  }));
-  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-  const area = `${path} L ${pts[pts.length - 1].x} ${pad.top + innerH} L ${pts[0].x} ${pad.top + innerH} Z`;
+
+  const pad = {
+    top: 16,
+    right: 16,
+    bottom: 36,
+    left: 48,
+  };
+
+  const innerWidth =
+    width - pad.left - pad.right;
+
+  const innerHeight =
+    h - pad.top - pad.bottom;
+
+  const max = Math.max(
+    1,
+    ...rows.map((item) => item.value)
+  );
+
+  const stepX =
+    rows.length > 1
+      ? innerWidth /
+        (rows.length - 1)
+      : 0;
+
+  const points = rows.map(
+    (item, index) => ({
+      x:
+        rows.length === 1
+          ? pad.left +
+            innerWidth / 2
+          : pad.left +
+            index * stepX,
+
+      y:
+        pad.top +
+        innerHeight -
+        (item.value / max) *
+          innerHeight,
+
+      item,
+    })
+  );
+
+  const path = points
+    .map(
+      (point, index) =>
+        `${
+          index === 0
+            ? "M"
+            : "L"
+        } ${point.x} ${point.y}`
+    )
+    .join(" ");
+
+  const baseline =
+    pad.top + innerHeight;
+
+  const area =
+    points.length > 1
+      ? `${path} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z`
+      : null;
 
   return (
-    <svg className="chart" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" role="img">
-      {Array.from({ length: 5 }).map((_, i) => {
-        const y = pad.top + (innerH * i) / 4;
-        return <line key={i} x1={pad.left} y1={y} x2={w - pad.right} y2={y} stroke="#eceff4" />;
+    <svg
+      className="chart"
+      viewBox={`0 0 ${width} ${h}`}
+      preserveAspectRatio="xMidYMid meet"
+      role="img"
+      aria-label="Line chart"
+    >
+      {Array.from({
+        length: 5,
+      }).map((_, index) => {
+        const y =
+          pad.top +
+          (innerHeight * index) /
+            4;
+
+        const value =
+          max -
+          (max * index) / 4;
+
+        return (
+          <g key={index}>
+            <line
+              x1={pad.left}
+              y1={y}
+              x2={
+                width - pad.right
+              }
+              y2={y}
+              stroke="#eceff4"
+            />
+
+            <text
+              x={pad.left - 6}
+              y={y + 4}
+              textAnchor="end"
+              className="chart-axis"
+            >
+              {format(
+                Math.round(value)
+              )}
+            </text>
+          </g>
+        );
       })}
-      <path d={area} fill={color} opacity="0.1" />
-      <path d={path} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" />
-      {pts.map((p) => (
-        <g key={p.d.label}>
-          <circle cx={p.x} cy={p.y} r="3.5" fill="#fff" stroke={color} strokeWidth="2">
-            <title>{`${p.d.label}: ${format(p.d.value)}`}</title>
-          </circle>
-          <text x={p.x} y={h - 14} textAnchor="middle" className="chart-axis">
-            {p.d.label}
-          </text>
-        </g>
-      ))}
+
+      {area && (
+        <path
+          d={area}
+          fill="#2563eb"
+          opacity="0.1"
+        />
+      )}
+
+      <path
+        d={path}
+        fill="none"
+        stroke="#2563eb"
+        strokeWidth="2.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+
+      {points.map(
+        (point, index) => (
+          <g
+            key={`${point.item.label}-${index}`}
+          >
+            <circle
+              cx={point.x}
+              cy={point.y}
+              r="3.5"
+              fill="#fff"
+              stroke="#2563eb"
+              strokeWidth="2"
+            >
+              <title>
+                {`${point.item.label}: ${format(
+                  point.item.value
+                )}`}
+              </title>
+            </circle>
+
+            <text
+              x={point.x}
+              y={h - 14}
+              textAnchor="middle"
+              className="chart-axis"
+            >
+              {point.item.label}
+            </text>
+          </g>
+        )
+      )}
     </svg>
   );
 }
 
-// Donut chart with legend. data: [{ label, value }]
-export function DonutChart({ data, size = 200 }) {
-  const total = data.reduce((s, d) => s + d.value, 0) || 1;
-  const r = 70;
-  const c = 2 * Math.PI * r;
-  const cx = size / 2;
-  const cy = size / 2;
+/* -------------------------------------------------------
+ * DONUT CHART
+ * data: [{ label, value }]
+ * ----------------------------------------------------- */
+
+export function DonutChart({
+  data = [],
+  size = 200,
+}) {
+  const rows = safeData(data);
+
+  if (rows.length === 0) {
+    return <EmptyChart />;
+  }
+
+  const total =
+    rows.reduce(
+      (sum, item) =>
+        sum + item.value,
+      0
+    ) || 1;
+
+  const radius = 70;
+
+  const circumference =
+    2 * Math.PI * radius;
+
+  const center = size / 2;
+
   let offset = 0;
 
   return (
@@ -105,45 +404,111 @@ export function DonutChart({ data, size = 200 }) {
         height={size}
         preserveAspectRatio="xMidYMid meet"
         role="img"
+        aria-label="Donut chart"
       >
-        <g transform={`rotate(-90 ${cx} ${cy})`}>
-          {data.map((d, i) => {
-            const frac = d.value / total;
-            const dash = frac * c;
-            const seg = (
-              <circle
-                key={d.label}
-                cx={cx}
-                cy={cy}
-                r={r}
-                fill="none"
-                stroke={PALETTE[i % PALETTE.length]}
-                strokeWidth="22"
-                strokeDasharray={`${dash} ${c - dash}`}
-                strokeDashoffset={-offset}
-              >
-                <title>{`${d.label}: ${d.value}`}</title>
-              </circle>
-            );
-            offset += dash;
-            return seg;
-          })}
+        <g
+          transform={`rotate(-90 ${center} ${center})`}
+        >
+          {rows.map(
+            (item, index) => {
+              const fraction =
+                item.value /
+                total;
+
+              const dash =
+                fraction *
+                circumference;
+
+              const segment = (
+                <circle
+                  key={`${item.label}-${index}`}
+                  cx={center}
+                  cy={center}
+                  r={radius}
+                  fill="none"
+                  stroke={
+                    PALETTE[
+                      index %
+                        PALETTE.length
+                    ]
+                  }
+                  strokeWidth="22"
+                  strokeDasharray={`${dash} ${
+                    circumference -
+                    dash
+                  }`}
+                  strokeDashoffset={
+                    -offset
+                  }
+                >
+                  <title>
+                    {`${item.label}: ${item.value}`}
+                  </title>
+                </circle>
+              );
+
+              offset += dash;
+
+              return segment;
+            }
+          )}
         </g>
-        <text x={cx} y={cy - 4} textAnchor="middle" className="donut-total">
-          {total}
+
+        <text
+          x={center}
+          y={center - 4}
+          textAnchor="middle"
+          className="donut-total"
+        >
+          {total.toLocaleString(
+            "en-IN"
+          )}
         </text>
-        <text x={cx} y={cy + 16} textAnchor="middle" className="chart-axis">
+
+        <text
+          x={center}
+          y={center + 16}
+          textAnchor="middle"
+          className="chart-axis"
+        >
           total
         </text>
       </svg>
+
       <ul className="legend">
-        {data.map((d, i) => (
-          <li key={d.label}>
-            <span className="legend-dot" style={{ background: PALETTE[i % PALETTE.length] }} />
-            {d.label} <span className="muted">({d.value})</span>
-          </li>
-        ))}
+        {rows.map(
+          (item, index) => (
+            <li
+              key={`${item.label}-${index}`}
+            >
+              <span
+                className="legend-dot"
+                style={{
+                  background:
+                    PALETTE[
+                      index %
+                        PALETTE.length
+                    ],
+                }}
+              />
+
+              {item.label}
+
+              <span className="muted">
+                {" "}
+                (
+                {item.value.toLocaleString(
+                  "en-IN"
+                )}
+                )
+              </span>
+            </li>
+          )
+        )}
       </ul>
+    </div>
+  );
+}
     </div>
   );
 }
