@@ -1,50 +1,21 @@
-spring.application.name=inventory-management
+FROM maven:3.9.9-eclipse-temurin-21 AS build
 
-# ==========================================
-# DATABASE
-# ==========================================
+WORKDIR /app
 
-spring.datasource.url=${DATABASE_URL:jdbc:mysql://localhost:3306/inventory_management}
-spring.datasource.username=${DATABASE_USERNAME:root}
-spring.datasource.password=${DATABASE_PASSWORD:manager}
-spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+COPY pom.xml .
 
-# ==========================================
-# JPA
-# ==========================================
+COPY java ./src/main/java
 
-spring.jpa.hibernate.ddl-auto=update
-spring.jpa.show-sql=true
-spring.jpa.properties.hibernate.format_sql=true
-spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect
+COPY resources ./src/main/resources
 
-# ==========================================
-# JWT
-# ==========================================
+RUN mvn clean package -DskipTests
 
-jwt.secret=${JWT_SECRET:4Lz2jN8qYvP6rXs1Km9HwEa5UfBcD7RgTtQxVzMnYpLs3JkFhG}
-jwt.expiration=${JWT_EXPIRATION:86400000}
+FROM eclipse-temurin:21-jre
 
-# ==========================================
-# SPRING AI / GROQ
-# ==========================================
+WORKDIR /app
 
-spring.ai.openai.base-url=${GROQ_BASE_URL:https://api.groq.com/openai/v1}
-spring.ai.openai.api-key=${GROQ_API_KEY:}
-spring.ai.openai.chat.options.model=${GROQ_MODEL:llama-3.3-70b-versatile}
-spring.ai.openai.chat.options.temperature=${GROQ_TEMPERATURE:0.3}
+COPY --from=build /app/target/*.jar app.jar
 
-# ==========================================
-# CORS
-# ==========================================
-
-app.frontend-url=${FRONTEND_URL:http://localhost:5173}
-
-# ==========================================
-# SERVER
-# ==========================================
-
-server.port=${PORT:8080}
 EXPOSE 8080
 
 ENTRYPOINT ["java", "-jar", "app.jar"]
