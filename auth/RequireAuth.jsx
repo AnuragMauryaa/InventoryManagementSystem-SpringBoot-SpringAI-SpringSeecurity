@@ -1,4 +1,8 @@
-import { Navigate, useLocation } from "react-router-dom";
+import {
+  Navigate,
+  useLocation,
+} from "react-router-dom";
+
 import { useAuth } from "./AuthContext";
 
 export default function RequireAuth({
@@ -10,7 +14,8 @@ export default function RequireAuth({
     loading,
   } = useAuth();
 
-  const location = useLocation();
+  const location =
+    useLocation();
 
   if (loading) {
     return (
@@ -25,7 +30,7 @@ export default function RequireAuth({
           fontSize: "14px",
         }}
       >
-        Checking authentication...
+        Loading...
       </div>
     );
   }
