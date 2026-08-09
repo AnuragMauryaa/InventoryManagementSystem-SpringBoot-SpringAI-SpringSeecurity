@@ -1,20 +1,22 @@
-# ================================
-# Stage 1: Build Spring Boot app
-# ================================
-FROM eclipse-temurin:21-jdk AS build
+# ==========================================
+# Stage 1: Build Spring Boot application
+# ==========================================
+
+FROM maven:3.9.9-eclipse-temurin-21 AS build
 
 WORKDIR /app
 
-COPY . .
+COPY pom.xml .
 
-RUN chmod +x mvnw
+COPY src ./src
 
-RUN ./mvnw clean package -DskipTests
+RUN mvn clean package -DskipTests
 
 
-# ================================
-# Stage 2: Run Spring Boot app
-# ================================
+# ==========================================
+# Stage 2: Run Spring Boot application
+# ==========================================
+
 FROM eclipse-temurin:21-jre
 
 WORKDIR /app
