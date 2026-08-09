@@ -2,120 +2,116 @@ import { createContext, useContext, useEffect, useState } from "react";
 import api from "../services/api";
 
 const AuthContext = createContext(null);
-const STORAGE_KEY = "ims.auth.user";
-const TOKEN_KEY = "token";
 
-const PERMISSIONS = {
-    ADMIN: ["view", "create", "edit", "adjust", "manageUsers", "approve"],
-    MANAGER: ["view", "create", "edit", "adjust"],
-    STAFF: ["view"],
-};
+const STORAGE_KEY = "ims.auth.user";
 
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
 
-    useEffect(() => {
-        if (user)
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-        else
-            localStorage.removeItem(STORAGE_KEY);
-    }, [user]);
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }, [user]);
 
-    const toUser = (profile) => ({
-        name: profile.fullName || profile.name || profile.username,
-        username: profile.username,
-        role: profile.role,
-    });
+  const login = async (username, password) => {
+    try {
+      const response = await api.post("/auth/login", {
+        username,
+        password,
+      });
 
-    const getErrorMessage = (error, fallback) =>
-        error?.response?.data?.message || error?.response?.data || error?.message || fallback;
+      const data = response.data;
 
-    const logout = () => {
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(STORAGE_KEY);
-        setUser(null);
-    };
+      /*
+       * Your backend login response should contain the JWT.
+       * Common possibilities:
+       * { token: "..." }
+       * or { accessToken: "..." }
+       */
 
-    useEffect(() => {
-        const restoreSession = async () => {
-            if (!localStorage.getItem(TOKEN_KEY)) {
-                setIsLoading(false);
-                return;
-            }
-            try {
-                const response = await api.get("/auth/me");
-                setUser(toUser(response.data));
-            } catch {
-                logout();
-            } finally {
-                setIsLoading(false);
-            }
+      const token = data.token || data.accessToken;
+
+      if (!token) {
+        return {
+          ok: false,
+          error: "Login succeeded but JWT token was not returned.",
         };
-        restoreSession();
-    }, []);
+      }
 
-    useEffect(() => {
-        const handleUnauthorized = () => logout();
-        window.addEventListener("ims:unauthorized", handleUnauthorized);
-        return () => window.removeEventListener("ims:unauthorized", handleUnauthorized);
-    }, []);
+      localStorage.setItem("token", token);
 
-    const login = async (username, password) => {
-        try {
-            const response = await api.post("/auth/login", {
-                username,
-                password,
-            });
-            const data = response.data;
-            localStorage.setItem(TOKEN_KEY, data.token);
-            const me = await api.get("/auth/me");
-            setUser(toUser(me.data));
-            return {
-                ok: true,
-            };
-        } catch (e) {
-            return {
-                ok: false,
-                error: getErrorMessage(e, "Invalid username or password"),
-            };
-        }
+      const loggedInUser = {
+        username: data.username || username,
+        name: data.fullName || data.name || username,
+        role: data.role || "Staff",
+      };
+
+      setUser(loggedInUser);
+
+      return {
+        ok: true,
+        user: loggedInUser,
+      };
+    } catch (error) {
+      console.error("Login error:", error);
+
+      return {
+        ok: false,
+        error:
+          error.response?.data?.message ||
+          error.response?.data ||
+          "Invalid username or password.",
+      };
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem("token");
+    setUser(null);
+  };
+
+  const can = (action) => {
+    if (!user) return false;
+
+    const permissions = {
+      Admin: ["view", "create", "edit", "adjust", "manageUsers"],
+      Manager: ["view", "create", "edit", "adjust"],
+      Staff: ["view"],
     };
 
-    const register = async (registration) => {
-        try {
-            const response = await api.post("/auth/register", registration);
-            return { ok: true, data: response.data };
-        } catch (error) {
-            return { ok: false, error: getErrorMessage(error, "Unable to create the account.") };
-        }
-    };
+    return permissions[user.role]?.includes(action) || false;
+  };
 
-    const can = (action) => {
-        if (!user)
-            return false;
-        return PERMISSIONS[user.role]?.includes(action);
-    };
-
-    return (
-        <AuthContext.Provider
-            value={{
-                user,
-                isLoading,
-                login,
-                register,
-                logout,
-                can,
-            }}
-        >
-            {children}
-        </AuthContext.Provider>
-    );
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        login,
+        logout,
+        can,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
-    const ctx = useContext(AuthContext);
-    if (!ctx)
-        throw new Error("useAuth must be used inside AuthProvider");
-    return ctx;
+  const ctx = useContext(AuthContext);
+
+  if (!ctx) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+
+  return ctx;
 }
