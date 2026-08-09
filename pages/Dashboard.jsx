@@ -1,112 +1,401 @@
-import PageHeader from '../components/PageHeader';
-import DataTable from '../components/DataTable';
-import Badge from '../components/Badge';
-import { BarChart, LineChart, DonutChart } from '../components/Charts';
-import { useStore } from '../store/StoreContext';
+import { useEffect, useMemo, useState } from "react";
 
-const inr = (value) => '₹ ' + Number(value).toLocaleString('en-IN');
+import PageHeader from "../components/PageHeader";
+import { useStore } from "../store/StoreContext";
+import { useAuth } from "../auth/AuthContext";
+import { api } from "../api/api";
 
-const movementColor = {
-  IN: 'green',
-  OUT: 'amber',
-  ADJUSTMENT: 'gray',
-  TRANSFER: 'blue',
-};
-
-const byMonth = (orders) => {
-  const totals = new Map();
-  orders.forEach((order) => {
-    if (!order.date) return;
-    const date = new Date(`${order.date}T00:00:00`);
-    if (Number.isNaN(date.getTime())) return;
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    const label = date.toLocaleString('en-IN', { month: 'short' });
-    const current = totals.get(key) || { label, value: 0 };
-    current.value += Number(order.total || 0);
-    totals.set(key, current);
-  });
-  return [...totals.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, value]) => value);
-};
+const inr = (value) =>
+  `₹${Number(value || 0).toLocaleString("en-IN")}`;
 
 export default function Dashboard() {
-  const { dashboardStats: stats, lowStockProducts, stockMovements, purchaseOrders, salesOrders, products } = useStore();
+  const {
+    products,
+    warehouses,
+    purchaseOrders,
+    salesOrders,
+    stockLevels,
+    loading,
+    error,
+    reload,
+  } = useStore();
 
-  const purchasesByMonth = byMonth(purchaseOrders);
-  const salesByMonth = byMonth(salesOrders);
+  const { user } = useAuth();
 
-  const stockByCategory = [...products.reduce((totals, product) => {
-    const name = product.categoryName || 'Uncategorised';
-    totals.set(name, (totals.get(name) || 0) + product.costPrice * product.onHand);
-    return totals;
-  }, new Map()).entries()].map(([label, value]) => ({ label, value }));
+  const [backendSummary, setBackendSummary] =
+    useState(null);
 
-  // Safe defaults utilizing || 0 to avoid NaN displays
-  const statCards = [
-    { label: 'Products', value: stats.totalProducts || 0 },
-    { label: 'Active Warehouses', value: stats.totalWarehouses || 0 },
-    { label: 'Low Stock Items', value: stats.lowStockCount || 0 },
-    { label: 'Open Purchase Orders', value: stats.openPurchaseOrders || 0 },
-    { label: 'Open Sales Orders', value: stats.openSalesOrders || 0 },
-    { label: 'Stock Value', value: inr(stats.stockValue || 0) },
-  ];
+  const [summaryLoading, setSummaryLoading] =
+    useState(false);
 
-  const lowColumns = [
-    { key: 'sku', header: 'SKU' },
-    { key: 'name', header: 'Product' },
-    { key: 'onHand', header: 'On hand' },
-    { key: 'reorderLevel', header: 'Reorder level' },
+  const [summaryError, setSummaryError] =
+    useState("");
+
+  /*
+   * Try to obtain a backend dashboard summary.
+   *
+   * If your backend doesn't expose /api/dashboard,
+   * the dashboard still works using the already-loaded
+   * real API data from StoreContext.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSummary = async () => {
+      setSummaryLoading(true);
+      setSummaryError("");
+
+      try {
+        const response =
+          await api.get("/api/dashboard");
+
+        if (!cancelled) {
+          setBackendSummary(
+            response?.data ||
+              response
+          );
+        }
+      } catch (err) {
+        /*
+         * Do not make the whole dashboard unusable
+         * if the optional summary endpoint isn't present.
+         */
+        if (!cancelled) {
+          setSummaryError(
+            err?.message || ""
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setSummaryLoading(false);
+        }
+      }
+    };
+
+    loadSummary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const lowStockProducts = useMemo(() => {
+    return products.filter(
+      (product) => {
+        const onHand =
+          Number(
+            product.onHand ?? 0
+          );
+
+        const reorderLevel =
+          Number(
+            product.reorderLevel ?? 0
+          );
+
+        return (
+          product.active !== false &&
+          onHand <= reorderLevel
+        );
+      }
+    );
+  }, [products]);
+
+  const totalStockValue = useMemo(() => {
+    return products.reduce(
+      (total, product) => {
+        return (
+          total +
+          Number(
+            product.costPrice ?? 0
+          ) *
+            Number(
+              product.onHand ?? 0
+            )
+        );
+      },
+      0
+    );
+  }, [products]);
+
+  const openPurchaseOrders =
+    useMemo(() => {
+      return purchaseOrders.filter(
+        (order) =>
+          ![
+            "RECEIVED",
+            "CANCELLED",
+          ].includes(
+            String(
+              order.status || ""
+            ).toUpperCase()
+          )
+      ).length;
+    }, [purchaseOrders]);
+
+  const openSalesOrders =
+    useMemo(() => {
+      return salesOrders.filter(
+        (order) =>
+          ![
+            "SHIPPED",
+            "CANCELLED",
+          ].includes(
+            String(
+              order.status || ""
+            ).toUpperCase()
+          )
+      ).length;
+    }, [salesOrders]);
+
+  const totalUnits = useMemo(() => {
+    return stockLevels.reduce(
+      (total, stock) =>
+        total +
+        Number(
+          stock.quantity ?? 0
+        ),
+      0
+    );
+  }, [stockLevels]);
+
+  const stats = [
     {
-      key: 'status',
-      header: 'Status',
-      render: (row) => <Badge color={row.onHand === 0 ? 'red' : 'amber'}>{row.onHand === 0 ? 'Out of stock' : 'Low'}</Badge>,
+      label: "Products",
+      value:
+        backendSummary?.totalProducts ??
+        products.length,
     },
-  ];
-
-  const movementColumns = [
-    { key: 'date', header: 'Date' },
-    { key: 'sku', header: 'SKU' },
-    { key: 'name', header: 'Product' },
-    { key: 'type', header: 'Type', render: (row) => <Badge color={movementColor[row.type]}>{row.type}</Badge> },
-    { key: 'quantity', header: 'Qty' },
-    { key: 'ref', header: 'Reference' },
+    {
+      label: "Warehouses",
+      value:
+        backendSummary?.totalWarehouses ??
+        warehouses.length,
+    },
+    {
+      label: "Low Stock",
+      value:
+        backendSummary?.lowStockCount ??
+        lowStockProducts.length,
+    },
+    {
+      label: "Stock Value",
+      value: inr(
+        backendSummary?.stockValue ??
+          totalStockValue
+      ),
+    },
+    {
+      label: "Open Purchase Orders",
+      value:
+        backendSummary?.openPurchaseOrders ??
+        openPurchaseOrders,
+    },
+    {
+      label: "Open Sales Orders",
+      value:
+        backendSummary?.openSalesOrders ??
+        openSalesOrders,
+    },
   ];
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle="Live overview of inventory health" />
+      <PageHeader
+        title="Dashboard"
+        subtitle={
+          user?.fullName ||
+          user?.username
+            ? `Welcome, ${
+                user.fullName ||
+                user.username
+              }`
+            : "Inventory overview"
+        }
+      />
 
-      <div className="stat-grid mb-16">
-        {statCards.map((card) => (
-          <div className="stat" key={card.label}>
-            <div className="label">{card.label}</div>
-            <div className="value">{card.value}</div>
+      {(error || summaryError) && (
+        <div
+          className="login-error"
+          role="alert"
+        >
+          {error ||
+            "Some dashboard information could not be loaded."}
+        </div>
+      )}
+
+      <div className="stat-grid">
+        {stats.map((stat) => (
+          <div
+            className="stat-card"
+            key={stat.label}
+          >
+            <div className="stat-label">
+              {stat.label}
+            </div>
+
+            <div className="stat-value">
+              {loading ||
+              summaryLoading
+                ? "..."
+                : stat.value}
+            </div>
           </div>
         ))}
       </div>
 
-      <div className="chart-grid mb-16">
+      <div
+        style={{
+          marginTop: 24,
+          display: "grid",
+          gridTemplateColumns:
+            "repeat(auto-fit, minmax(280px, 1fr))",
+          gap: 16,
+        }}
+      >
         <div className="card">
-          <h2>Monthly sales</h2>
-          {salesByMonth.length ? <LineChart data={salesByMonth} format={inr} /> : <p className="muted">No sales orders yet.</p>}
+          <h3>Inventory Overview</h3>
+
+          <div
+            style={{
+              marginTop: 16,
+              display: "grid",
+              gap: 12,
+            }}
+          >
+            <div>
+              <strong>
+                {products.length}
+              </strong>{" "}
+              products
+            </div>
+
+            <div>
+              <strong>
+                {warehouses.length}
+              </strong>{" "}
+              warehouses
+            </div>
+
+            <div>
+              <strong>
+                {totalUnits}
+              </strong>{" "}
+              units currently recorded
+            </div>
+
+            <div>
+              <strong>
+                {lowStockProducts.length}
+              </strong>{" "}
+              products at or below reorder level
+            </div>
+          </div>
         </div>
+
         <div className="card">
-          <h2>Monthly purchases</h2>
-          {purchasesByMonth.length ? <BarChart data={purchasesByMonth} format={inr} /> : <p className="muted">No purchase orders yet.</p>}
+          <h3>Order Overview</h3>
+
+          <div
+            style={{
+              marginTop: 16,
+              display: "grid",
+              gap: 12,
+            }}
+          >
+            <div>
+              <strong>
+                {purchaseOrders.length}
+              </strong>{" "}
+              purchase orders
+            </div>
+
+            <div>
+              <strong>
+                {openPurchaseOrders}
+              </strong>{" "}
+              purchase orders open
+            </div>
+
+            <div>
+              <strong>
+                {salesOrders.length}
+              </strong>{" "}
+              sales orders
+            </div>
+
+            <div>
+              <strong>
+                {openSalesOrders}
+              </strong>{" "}
+              sales orders open
+            </div>
+          </div>
         </div>
+
         <div className="card">
-          <h2>Stock value by category</h2>
-          {stockByCategory.length ? <DonutChart data={stockByCategory} /> : <p className="muted">No stock recorded yet.</p>}
+          <h3>Low Stock</h3>
+
+          {lowStockProducts.length === 0 ? (
+            <p className="muted">
+              No products currently require
+              replenishment.
+            </p>
+          ) : (
+            <div
+              style={{
+                marginTop: 12,
+                display: "grid",
+                gap: 10,
+              }}
+            >
+              {lowStockProducts
+                .slice(0, 5)
+                .map((product) => (
+                  <div
+                    key={
+                      product.id ||
+                      product.productId ||
+                      product.sku
+                    }
+                    style={{
+                      display: "flex",
+                      justifyContent:
+                        "space-between",
+                      gap: 12,
+                    }}
+                  >
+                    <span>
+                      {product.name}
+                    </span>
+
+                    <strong>
+                      {Number(
+                        product.onHand ?? 0
+                      )}
+                    </strong>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="card mb-16">
-        <h2>Low stock alerts</h2>
-        <DataTable columns={lowColumns} rows={lowStockProducts} empty="Everything is above reorder level." />
-      </div>
-
-      <div className="card">
-        <h2>Recent stock movements</h2>
-        <DataTable columns={movementColumns} rows={stockMovements} empty="No stock movements recorded yet." />
+      <div
+        style={{
+          marginTop: 20,
+          display: "flex",
+          justifyContent: "flex-end",
+        }}
+      >
+        <button
+          className="secondary"
+          onClick={reload}
+          disabled={loading}
+        >
+          {loading
+            ? "Refreshing..."
+            : "Refresh data"}
+        </button>
       </div>
     </div>
   );
