@@ -1,362 +1,720 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import api from '../services/api';
-import { useAuth } from '../auth/AuthContext';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+} from "react";
+
+import {
+  productApi,
+  inventoryApi,
+  warehouseApi,
+  supplierApi,
+  customerApi,
+  purchaseOrderApi,
+  salesOrderApi,
+} from "../api/api";
 
 const StoreContext = createContext(null);
 
-const emptyState = {
-  products: [],
-  categories: [],
-  units: [],
-  warehouses: [],
-  suppliers: [],
-  customers: [],
-  purchaseOrders: [],
-  salesOrders: [],
-  stockLevels: [],
-  stockMovements: [],
-  dashboardStats: {}, 
-  users: [],
-};
-
-const number = (value) => Number(value ?? 0);
-
-const errorMessage = (error, fallback = 'Unable to complete the request.') =>
-  error?.response?.data?.message || error?.response?.data || error?.message || fallback;
-
-const mapCategory = (category) => ({
-  id: category.categoryId,
-  name: category.categoryName,
-  description: category.description,
-});
-
-const mapUnit = (unit) => ({
-  id: unit.unitId,
-  name: unit.unitName,
-  description: unit.description,
-});
-
-const mapWarehouse = (warehouse) => ({
-  id: warehouse.warehouseId,
-  code: warehouse.warehouseCode,
-  name: warehouse.warehouseName,
-  location: [warehouse.address, warehouse.city].filter(Boolean).join(', '),
-  active: warehouse.active,
-});
-
-const mapSupplier = (supplier) => ({
-  id: supplier.supplierId,
-  code: supplier.supplierCode,
-  name: supplier.supplierName,
-  email: supplier.email,
-  phone: supplier.phone,
-  active: supplier.active,
-});
-
-const mapCustomer = (customer) => ({
-  id: customer.customerId,
-  code: customer.customerCode,
-  name: customer.customerName,
-  email: customer.email,
-  phone: customer.phone,
-  active: customer.active,
-});
-
-const mapProduct = (product, onHand) => ({
-  id: product.productId,
-  sku: product.sku,
-  name: product.productName,
-  description: product.description,
-  costPrice: number(product.purchasePrice),
-  sellPrice: number(product.sellingPrice),
-  reorderLevel: number(product.reorderLevel),
-  category: product.categoryId,
-  unit: product.unitId,
-  categoryName: product.category,
-  unitName: product.unit,
-  onHand: number(onHand),
-  active: true,
-});
-
-const mapInventory = (inventory, productById) => ({
-  id: inventory.inventoryId,
-  productId: inventory.productId,
-  warehouseId: inventory.warehouseId,
-  sku: productById.get(inventory.productId)?.sku || '',
-  name: inventory.productName,
-  quantity: number(inventory.quantity),
-  reserved: 0,
-});
-
-const mapPurchaseOrder = (order) => ({
-  id: order.purchaseOrderId,
-  supplierId: order.supplierId,
-  supplier: order.supplierName,
-  warehouseId: order.warehouseId,
-  warehouse: order.warehouseName || '',
-  status: order.status,
-  total: number(order.totalAmount),
-  date: order.orderDate,
-});
-
-const mapSalesOrder = (order) => ({
-  id: order.salesOrderId,
-  customerId: order.customerId,
-  customer: order.customerName,
-  warehouseId: order.warehouseId,
-  warehouse: order.warehouseName || '',
-  status: order.status,
-  total: number(order.totalAmount),
-  date: order.orderDate,
-});
-
-const mapMovement = (movement) => ({
-  id: movement.movementId,
-  date: movement.createdAt ? new Date(movement.createdAt).toLocaleString() : '',
-  sku: movement.sku,
-  name: movement.productName,
-  type: movement.type,
-  quantity: number(movement.quantity),
-  ref: movement.reference || '',
-});
-
 export function StoreProvider({ children }) {
-  const { user } = useAuth();
-  const [state, setState] = useState(emptyState);
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadError, setLoadError] = useState('');
+  const [products, setProducts] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [salesOrders, setSalesOrders] = useState([]);
+  const [stockLevels, setStockLevels] = useState([]);
+  const [stockMovements, setStockMovements] = useState([]);
 
-  const reset = useCallback(() => {
-    setState(emptyState);
-    setLoadError('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  /*
+   * Normalize backend responses.
+   *
+   * This allows the frontend to work with either:
+   *
+   * [
+   *   {...},
+   *   {...}
+   * ]
+   *
+   * or common Spring response wrappers such as:
+   *
+   * {
+   *   content: [...]
+   * }
+   *
+   * {
+   *   data: [...]
+   * }
+   */
+  const extractList = useCallback((response) => {
+    if (!response) return [];
+
+    if (Array.isArray(response)) {
+      return response;
+    }
+
+    if (Array.isArray(response.content)) {
+      return response.content;
+    }
+
+    if (Array.isArray(response.data)) {
+      return response.data;
+    }
+
+    if (Array.isArray(response.items)) {
+      return response.items;
+    }
+
+    return [];
   }, []);
 
-  const loadAllData = useCallback(async () => {
-    setIsLoading(true);
-    setLoadError('');
-    try {
-      let usersResponse = { data: [] };
-      if (user?.role === 'ADMIN') {
-        usersResponse = await api.get('/users');
-      }
+  /*
+   * Load all master data.
+   *
+   * This replaces dummyData.js as the source of truth.
+   */
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    setError(null);
 
+    try {
       const [
-        categoriesResponse,
-        unitsResponse,
         productsResponse,
         warehousesResponse,
         suppliersResponse,
         customersResponse,
-        inventoryResponse,
         purchaseOrdersResponse,
         salesOrdersResponse,
+        inventoryResponse,
         movementsResponse,
-        dashboardResponse, 
       ] = await Promise.all([
-        api.get('/categories'),
-        api.get('/units'),
-        api.get('/products'),
-        api.get('/warehouses'),
-        api.get('/suppliers'),
-        api.get('/customers'),
-        api.get('/inventory'),
-        api.get('/purchase-orders'),
-        api.get('/sales-orders'),
-        api.get('/inventory/movements'),
-        api.get('/dashboard'), 
+        productApi.getAll(),
+        warehouseApi.getAll(),
+        supplierApi.getAll(),
+        customerApi.getAll(),
+        purchaseOrderApi.getAll(),
+        salesOrderApi.getAll(),
+        inventoryApi.getAll(),
+        inventoryApi.getMovements(),
       ]);
 
-      const productById = new Map(productsResponse.data.map((product) => [product.productId, product]));
-      const inventory = inventoryResponse.data.map((row) => mapInventory(row, productById));
+      setProducts(extractList(productsResponse));
+      setWarehouses(extractList(warehousesResponse));
+      setSuppliers(extractList(suppliersResponse));
+      setCustomers(extractList(customersResponse));
+      setPurchaseOrders(extractList(purchaseOrdersResponse));
+      setSalesOrders(extractList(salesOrdersResponse));
+      setStockLevels(extractList(inventoryResponse));
+      setStockMovements(extractList(movementsResponse));
+    } catch (err) {
+      console.error("Failed to load inventory data:", err);
 
-      const stockByProduct = inventory.reduce((totals, row) => {
-        totals.set(row.productId, (totals.get(row.productId) || 0) + row.quantity);
-        return totals;
-      }, new Map());
-
-      setState({
-        categories: categoriesResponse.data.map(mapCategory),
-        units: unitsResponse.data.map(mapUnit),
-        products: productsResponse.data.map((product) => mapProduct(product, stockByProduct.get(product.productId))),
-        warehouses: warehousesResponse.data.map(mapWarehouse),
-        suppliers: suppliersResponse.data.map(mapSupplier),
-        customers: customersResponse.data.map(mapCustomer),
-        stockLevels: inventory,
-        purchaseOrders: purchaseOrdersResponse.data.map(mapPurchaseOrder),
-        salesOrders: salesOrdersResponse.data.map(mapSalesOrder),
-        stockMovements: movementsResponse.data.map(mapMovement),
-        dashboardStats: dashboardResponse.data, 
-        users: usersResponse.data,
-      });
-    } catch (error) {
-      reset();
-      setLoadError(errorMessage(error, 'Could not load inventory data. Check that the backend is running.'));
+      setError(
+        err?.message ||
+          "Unable to load inventory data."
+      );
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  }, [reset, user?.role]);
+  }, [extractList]);
 
+  /*
+   * Initial load.
+   *
+   * AuthProvider runs above StoreProvider, and RequireAuth
+   * protects the application routes.
+   */
   useEffect(() => {
-    if (user) {
-      loadAllData();
-    } else {
-      reset();
-    }
-  }, [user, loadAllData, reset]);
+    loadAll();
+  }, [loadAll]);
 
-  const actions = useMemo(
-    () => ({
-      refresh: loadAllData,
-      addCategory: async (category) => {
-        await api.post('/categories', {
-          categoryName: category.name,
-          description: category.description || '',
-        });
-        await loadAllData();
-      },
-      addUnit: async (unit) => {
-        await api.post('/units', {
-          unitName: unit.name,
-          description: unit.description || '',
-        });
-        await loadAllData();
-      },
-      addProduct: async (product) => {
-        await api.post('/products', {
-          sku: product.sku,
-          productName: product.name,
-          description: product.description || '',
-          purchasePrice: number(product.costPrice),
-          sellingPrice: number(product.sellPrice),
-          reorderLevel: number(product.reorderLevel),
-          categoryId: number(product.category),
-          unitId: number(product.unit),
-        });
-        await loadAllData();
-      },
-      updateProduct: async (id, product) => {
-        await api.put(`/products/${id}`, {
-          sku: product.sku,
-          productName: product.name,
-          description: product.description || '',
-          purchasePrice: number(product.costPrice),
-          sellingPrice: number(product.sellPrice),
-          reorderLevel: number(product.reorderLevel),
-          categoryId: number(product.category),
-          unitId: number(product.unit),
-        });
-        await loadAllData();
-      },
-      deleteProduct: async (id) => {
-        await api.delete(`/products/${id}`);
-        await loadAllData();
-      },
-      addWarehouse: async (warehouse) => {
-        await api.post('/warehouses', {
-          warehouseCode: warehouse.code,
-          warehouseName: warehouse.name,
-          address: warehouse.location,
-        });
-        await loadAllData();
-      },
-      addSupplier: async (supplier) => {
-        await api.post('/suppliers', {
-          supplierCode: supplier.code,
-          supplierName: supplier.name,
-          email: supplier.email || null,
-          phone: supplier.phone || null,
-        });
-        await loadAllData();
-      },
-      addCustomer: async (customer) => {
-        await api.post('/customers', {
-          customerCode: customer.code,
-          customerName: customer.name,
-          email: customer.email || null,
-          phone: customer.phone || null,
-        });
-        await loadAllData();
-      },
-      addPurchaseOrder: async (order) => {
-        await api.post('/purchase-orders', {
-          supplierId: number(order.supplierId),
-          warehouseId: number(order.warehouseId),
-          orderDate: order.date,
-          status: order.status || 'PENDING',
-          totalAmount: number(order.total),
-        });
-        await loadAllData();
-      },
-      addSalesOrder: async (order) => {
-        await api.post('/sales-orders', {
-          customerId: number(order.customerId),
-          warehouseId: number(order.warehouseId),
-          orderDate: order.date,
-          status: order.status || 'PENDING',
-          totalAmount: number(order.total),
-        });
-        await loadAllData();
-      },
-      adjustStock: async (adjustment) => {
-        await api.post('/inventory/movements', {
-          productId: number(adjustment.productId),
-          warehouseId: number(adjustment.warehouseId),
-          type: adjustment.type,
-          quantity: number(adjustment.quantity),
-          reference: adjustment.reference || 'Manual adjustment',
-        });
-        await loadAllData();
-      },
-      updateUserAccess: async (id, accessData) => {
-        await api.put(`/users/${id}/access`, accessData);
-        await loadAllData();
-      },
-    }),
-    [loadAllData]
+  /* =========================================================
+     PRODUCTS
+     ========================================================= */
+
+  const addProduct = useCallback(
+    async (product) => {
+      const created = await productApi.create(product);
+
+      /*
+       * Some APIs return the created object directly,
+       * while others return { data: created }.
+       */
+      const newProduct =
+        created?.data || created;
+
+      if (newProduct) {
+        setProducts((prev) => [
+          ...prev,
+          newProduct,
+        ]);
+      } else {
+        await loadAll();
+      }
+
+      return newProduct;
+    },
+    [loadAll]
   );
 
-  const lowStockProducts = useMemo(
-    () => state.products.filter((product) => product.active && product.onHand <= product.reorderLevel),
-    [state.products]
+  const updateProduct = useCallback(
+    async (id, product) => {
+      const updated = await productApi.update(
+        id,
+        product
+      );
+
+      const updatedProduct =
+        updated?.data || updated;
+
+      if (updatedProduct) {
+        setProducts((prev) =>
+          prev.map((item) =>
+            item.id === id
+              ? updatedProduct
+              : item
+          )
+        );
+      } else {
+        await loadAll();
+      }
+
+      return updatedProduct;
+    },
+    [loadAll]
   );
 
-  const computedDashboardStats = useMemo(() => {
-    const openPurchaseOrders = state.purchaseOrders.filter(
-      (order) => !['RECEIVED', 'CANCELLED'].includes(order.status)
-    ).length;
-    
-    const openSalesOrders = state.salesOrders.filter(
-      (order) => !['SHIPPED', 'COMPLETED', 'CANCELLED'].includes(order.status)
-    ).length;
-    
-    const stockValue = state.products.reduce(
-      (total, product) => total + product.costPrice * product.onHand,
-      0
-    );
+  const deleteProduct = useCallback(
+    async (id) => {
+      await productApi.delete(id);
+
+      setProducts((prev) =>
+        prev.filter((item) => item.id !== id)
+      );
+    },
+    []
+  );
+
+  /* =========================================================
+     WAREHOUSES
+     ========================================================= */
+
+  const addWarehouse = useCallback(
+    async (warehouse) => {
+      const created =
+        await warehouseApi.create(
+          warehouse
+        );
+
+      const newWarehouse =
+        created?.data || created;
+
+      if (newWarehouse) {
+        setWarehouses((prev) => [
+          ...prev,
+          newWarehouse,
+        ]);
+      } else {
+        await loadAll();
+      }
+
+      return newWarehouse;
+    },
+    [loadAll]
+  );
+
+  const updateWarehouse = useCallback(
+    async (id, warehouse) => {
+      const updated =
+        await warehouseApi.update(
+          id,
+          warehouse
+        );
+
+      const updatedWarehouse =
+        updated?.data || updated;
+
+      if (updatedWarehouse) {
+        setWarehouses((prev) =>
+          prev.map((item) =>
+            item.id === id
+              ? updatedWarehouse
+              : item
+          )
+        );
+      } else {
+        await loadAll();
+      }
+
+      return updatedWarehouse;
+    },
+    [loadAll]
+  );
+
+  const deleteWarehouse = useCallback(
+    async (id) => {
+      await warehouseApi.delete(id);
+
+      setWarehouses((prev) =>
+        prev.filter((item) => item.id !== id)
+      );
+    },
+    []
+  );
+
+  /* =========================================================
+     SUPPLIERS
+     ========================================================= */
+
+  const addSupplier = useCallback(
+    async (supplier) => {
+      const created =
+        await supplierApi.create(
+          supplier
+        );
+
+      const newSupplier =
+        created?.data || created;
+
+      if (newSupplier) {
+        setSuppliers((prev) => [
+          ...prev,
+          newSupplier,
+        ]);
+      } else {
+        await loadAll();
+      }
+
+      return newSupplier;
+    },
+    [loadAll]
+  );
+
+  const updateSupplier = useCallback(
+    async (id, supplier) => {
+      const updated =
+        await supplierApi.update(
+          id,
+          supplier
+        );
+
+      const updatedSupplier =
+        updated?.data || updated;
+
+      if (updatedSupplier) {
+        setSuppliers((prev) =>
+          prev.map((item) =>
+            item.id === id
+              ? updatedSupplier
+              : item
+          )
+        );
+      } else {
+        await loadAll();
+      }
+
+      return updatedSupplier;
+    },
+    [loadAll]
+  );
+
+  const deleteSupplier = useCallback(
+    async (id) => {
+      await supplierApi.delete(id);
+
+      setSuppliers((prev) =>
+        prev.filter((item) => item.id !== id)
+      );
+    },
+    []
+  );
+
+  /* =========================================================
+     CUSTOMERS
+     ========================================================= */
+
+  const addCustomer = useCallback(
+    async (customer) => {
+      const created =
+        await customerApi.create(
+          customer
+        );
+
+      const newCustomer =
+        created?.data || created;
+
+      if (newCustomer) {
+        setCustomers((prev) => [
+          ...prev,
+          newCustomer,
+        ]);
+      } else {
+        await loadAll();
+      }
+
+      return newCustomer;
+    },
+    [loadAll]
+  );
+
+  const updateCustomer = useCallback(
+    async (id, customer) => {
+      const updated =
+        await customerApi.update(
+          id,
+          customer
+        );
+
+      const updatedCustomer =
+        updated?.data || updated;
+
+      if (updatedCustomer) {
+        setCustomers((prev) =>
+          prev.map((item) =>
+            item.id === id
+              ? updatedCustomer
+              : item
+          )
+        );
+      } else {
+        await loadAll();
+      }
+
+      return updatedCustomer;
+    },
+    [loadAll]
+  );
+
+  const deleteCustomer = useCallback(
+    async (id) => {
+      await customerApi.delete(id);
+
+      setCustomers((prev) =>
+        prev.filter((item) => item.id !== id)
+      );
+    },
+    []
+  );
+
+  /* =========================================================
+     PURCHASE ORDERS
+     ========================================================= */
+
+  const addPurchaseOrder = useCallback(
+    async (purchaseOrder) => {
+      const created =
+        await purchaseOrderApi.create(
+          purchaseOrder
+        );
+
+      const newOrder =
+        created?.data || created;
+
+      if (newOrder) {
+        setPurchaseOrders((prev) => [
+          ...prev,
+          newOrder,
+        ]);
+      } else {
+        await loadAll();
+      }
+
+      return newOrder;
+    },
+    [loadAll]
+  );
+
+  const updatePurchaseOrder = useCallback(
+    async (id, purchaseOrder) => {
+      const updated =
+        await purchaseOrderApi.update(
+          id,
+          purchaseOrder
+        );
+
+      const updatedOrder =
+        updated?.data || updated;
+
+      if (updatedOrder) {
+        setPurchaseOrders((prev) =>
+          prev.map((item) =>
+            item.id === id
+              ? updatedOrder
+              : item
+          )
+        );
+      } else {
+        await loadAll();
+      }
+
+      return updatedOrder;
+    },
+    [loadAll]
+  );
+
+  const deletePurchaseOrder = useCallback(
+    async (id) => {
+      await purchaseOrderApi.delete(id);
+
+      setPurchaseOrders((prev) =>
+        prev.filter((item) => item.id !== id)
+      );
+    },
+    []
+  );
+
+  /* =========================================================
+     SALES ORDERS
+     ========================================================= */
+
+  const addSalesOrder = useCallback(
+    async (salesOrder) => {
+      const created =
+        await salesOrderApi.create(
+          salesOrder
+        );
+
+      const newOrder =
+        created?.data || created;
+
+      if (newOrder) {
+        setSalesOrders((prev) => [
+          ...prev,
+          newOrder,
+        ]);
+      } else {
+        await loadAll();
+      }
+
+      return newOrder;
+    },
+    [loadAll]
+  );
+
+  const updateSalesOrder = useCallback(
+    async (id, salesOrder) => {
+      const updated =
+        await salesOrderApi.update(
+          id,
+          salesOrder
+        );
+
+      const updatedOrder =
+        updated?.data || updated;
+
+      if (updatedOrder) {
+        setSalesOrders((prev) =>
+          prev.map((item) =>
+            item.id === id
+              ? updatedOrder
+              : item
+          )
+        );
+      } else {
+        await loadAll();
+      }
+
+      return updatedOrder;
+    },
+    [loadAll]
+  );
+
+  const deleteSalesOrder = useCallback(
+    async (id) => {
+      await salesOrderApi.delete(id);
+
+      setSalesOrders((prev) =>
+        prev.filter((item) => item.id !== id)
+      );
+    },
+    []
+  );
+
+  /* =========================================================
+     INVENTORY
+     ========================================================= */
+
+  const adjustStock = useCallback(
+    async (movement) => {
+      const result =
+        await inventoryApi.adjustStock(
+          movement
+        );
+
+      /*
+       * Inventory adjustments affect multiple pieces
+       * of displayed data, so reload inventory after
+       * the backend successfully processes the movement.
+       */
+      const [
+        inventoryResponse,
+        movementsResponse,
+        productsResponse,
+      ] = await Promise.all([
+        inventoryApi.getAll(),
+        inventoryApi.getMovements(),
+        productApi.getAll(),
+      ]);
+
+      setStockLevels(
+        extractList(inventoryResponse)
+      );
+
+      setStockMovements(
+        extractList(movementsResponse)
+      );
+
+      setProducts(
+        extractList(productsResponse)
+      );
+
+      return result;
+    },
+    [extractList]
+  );
+
+  /* =========================================================
+     DERIVED DATA
+     ========================================================= */
+
+  const lowStockProducts = useMemo(() => {
+    return products.filter((product) => {
+      const onHand =
+        Number(product.onHand ?? 0);
+
+      const reorderLevel =
+        Number(product.reorderLevel ?? 0);
+
+      return (
+        product.active !== false &&
+        onHand <= reorderLevel
+      );
+    });
+  }, [products]);
+
+  const dashboardStats = useMemo(() => {
+    const totalProducts =
+      products.length;
+
+    const totalWarehouses =
+      warehouses.filter(
+        (warehouse) =>
+          warehouse.active !== false
+      ).length;
+
+    const lowStockCount =
+      lowStockProducts.length;
+
+    const openPurchaseOrders =
+      purchaseOrders.filter(
+        (order) =>
+          order.status !== "RECEIVED" &&
+          order.status !== "CANCELLED"
+      ).length;
+
+    const openSalesOrders =
+      salesOrders.filter(
+        (order) =>
+          order.status !== "SHIPPED" &&
+          order.status !== "CANCELLED"
+      ).length;
+
+    const stockValue =
+      products.reduce(
+        (sum, product) =>
+          sum +
+          Number(
+            product.costPrice ?? 0
+          ) *
+            Number(
+              product.onHand ?? 0
+            ),
+        0
+      );
 
     return {
-      ...state.dashboardStats, 
-      lowStockCount: lowStockProducts.length,
+      totalProducts,
+      totalWarehouses,
+      lowStockCount,
       openPurchaseOrders,
       openSalesOrders,
       stockValue,
     };
-  }, [state.dashboardStats, state.products, state.purchaseOrders, state.salesOrders, lowStockProducts]);
+  }, [
+    products,
+    warehouses,
+    lowStockProducts,
+    purchaseOrders,
+    salesOrders,
+  ]);
 
   const value = {
-    ...state,
-    isLoading,
-    loadError,
+    products,
+    warehouses,
+    suppliers,
+    customers,
+    purchaseOrders,
+    salesOrders,
+    stockLevels,
+    stockMovements,
+
     lowStockProducts,
-    dashboardStats: computedDashboardStats,
-    ...actions,
+    dashboardStats,
+
+    loading,
+    error,
+
+    reload: loadAll,
+
+    addProduct,
+    updateProduct,
+    deleteProduct,
+
+    addWarehouse,
+    updateWarehouse,
+    deleteWarehouse,
+
+    addSupplier,
+    updateSupplier,
+    deleteSupplier,
+
+    addCustomer,
+    updateCustomer,
+    deleteCustomer,
+
+    addPurchaseOrder,
+    updatePurchaseOrder,
+    deletePurchaseOrder,
+
+    addSalesOrder,
+    updateSalesOrder,
+    deleteSalesOrder,
+
+    adjustStock,
   };
 
-  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
+  return (
+    <StoreContext.Provider value={value}>
+      {children}
+    </StoreContext.Provider>
+  );
 }
 
 export function useStore() {
-  const context = useContext(StoreContext);
-  if (!context) throw new Error('useStore must be used inside a StoreProvider');
+  const context =
+    useContext(StoreContext);
+
+  if (!context) {
+    throw new Error(
+      "useStore must be used within a StoreProvider"
+    );
+  }
+
   return context;
 }
