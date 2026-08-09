@@ -1,18 +1,14 @@
 package com.cdac.ims.auth.security;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -20,16 +16,12 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
 
 @Configuration
-@RequiredArgsConstructor
 @EnableMethodSecurity
+@RequiredArgsConstructor
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
-
     private final AuthenticationProvider authenticationProvider;
-
-    @Value("${app.frontend-url:http://localhost:5173}")
-    private String frontendUrl;
 
     @Bean
     public SecurityFilterChain securityFilterChain(
@@ -37,11 +29,9 @@ public class SecurityConfig {
     ) throws Exception {
 
         http
-                .cors(cors -> cors.configurationSource(
-                        corsConfigurationSource()
-                ))
-
                 .csrf(csrf -> csrf.disable())
+
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(
@@ -53,10 +43,17 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth -> auth
 
+                        // Authentication endpoints
                         .requestMatchers(
                                 "/api/auth/**"
                         ).permitAll()
 
+                        // AI endpoint
+                        .requestMatchers(
+                                "/api/ai/**"
+                        ).authenticated()
+
+                        // Everything else requires authentication
                         .anyRequest().authenticated()
                 )
 
@@ -75,7 +72,9 @@ public class SecurityConfig {
                 new CorsConfiguration();
 
         configuration.setAllowedOrigins(
-                List.of(frontendUrl)
+                List.of(
+                        "http://localhost:5173"
+                )
         );
 
         configuration.setAllowedMethods(
@@ -84,15 +83,13 @@ public class SecurityConfig {
                         "POST",
                         "PUT",
                         "DELETE",
+                        "PATCH",
                         "OPTIONS"
                 )
         );
 
         configuration.setAllowedHeaders(
-                List.of(
-                        "Authorization",
-                        "Content-Type"
-                )
+                List.of("*")
         );
 
         configuration.setAllowCredentials(true);
@@ -107,11 +104,4 @@ public class SecurityConfig {
 
         return source;
     }
-}
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
-    }
-
 }
