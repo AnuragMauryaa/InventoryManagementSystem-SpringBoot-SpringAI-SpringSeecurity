@@ -1,106 +1,318 @@
-import { useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { useAuth } from '../auth/AuthContext';
+import { useState } from "react";
+import {
+  Link,
+  Navigate,
+  useNavigate,
+} from "react-router-dom";
+
+import { useAuth } from "../auth/AuthContext";
 
 export default function Register() {
-  const { register } = useAuth();
-  const navigate = useNavigate();
-  const [values, setValues] = useState({
-    fullName: '',
-    username: '',
-    email: '',
-    phone: '',
-    password: '',
-    confirmPassword: '',
-    role: 'STAFF', // Default selection
-  });
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
+  const {
+    user,
+    register,
+    loading,
+  } = useAuth();
 
-  if (user) return <Navigate to="/" replace />;
+  const navigate =
+    useNavigate();
 
-  const update = (event) => {
-    setValues((current) => ({ ...current, [event.target.name]: event.target.value }));
+  const [form, setForm] =
+    useState({
+      username: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+      fullName: "",
+      phone: "",
+    });
+
+  const [error, setError] =
+    useState("");
+
+  const [success, setSuccess] =
+    useState("");
+
+  if (user) {
+    return (
+      <Navigate
+        to="/"
+        replace
+      />
+    );
+  }
+
+  const updateField = (
+    event
+  ) => {
+    const {
+      name,
+      value,
+    } = event.target;
+
+    setForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
   };
 
-  const submit = async (event) => {
+  const submit = async (
+    event
+  ) => {
     event.preventDefault();
-    setError('');
 
-    if (values.password.length < 8) {
-      setError('Password must be at least 8 characters long.');
+    if (loading) return;
+
+    setError("");
+    setSuccess("");
+
+    if (
+      form.password !==
+      form.confirmPassword
+    ) {
+      setError(
+        "Passwords do not match."
+      );
+
       return;
     }
-    if (values.password !== values.confirmPassword) {
-      setError('Passwords do not match.');
+
+    if (form.password.length < 6) {
+      setError(
+        "Password must contain at least 6 characters."
+      );
+
       return;
     }
 
-    setSaving(true);
+    const payload = {
+      username:
+        form.username.trim(),
 
-    const result = await register({
-  fullName: values.fullName.trim(),
-  username: values.username.trim(),
-  email: values.email.trim(),
-  phone: values.phone.trim() || null,
-  password: values.password,
-  role: values.role,
-});
-    setSaving(false);
+      email:
+        form.email.trim(),
 
-    if (result.ok) {
-  navigate("/login");
-} else {
-  setError(result.error);
-}
+      password:
+        form.password,
+
+      fullName:
+        form.fullName.trim(),
+
+      phone:
+        form.phone.trim(),
+    };
+
+    const result =
+      await register(payload);
+
+    if (!result?.ok) {
+      setError(
+        result?.error ||
+          "Registration failed."
+      );
+
+      return;
+    }
+
+    if (result.authenticated) {
+      navigate("/", {
+        replace: true,
+      });
+
+      return;
+    }
+
+    setSuccess(
+      result.message ||
+        "Registration successful. Please sign in."
+    );
+
+    setTimeout(() => {
+      navigate("/login", {
+        replace: true,
+      });
+    }, 1000);
+  };
 
   return (
     <div className="login-screen">
-      <div className="login-card">
-        <div className="login-brand">IMS</div>
-        <h1>Create account</h1>
-        <p className="muted">Select your role to determine your access level.</p>
-        <form onSubmit={submit} className="login-form">
+      <div
+        className="login-card"
+        style={{
+          maxWidth: 440,
+        }}
+      >
+        <div className="login-brand">
+          <span>📦</span>
+          <span>IMS</span>
+        </div>
+
+        <div className="login-heading">
+          <h1>
+            Create account
+          </h1>
+
+          <p>
+            Inventory Management System
+          </p>
+        </div>
+
+        <form
+          className="login-form"
+          onSubmit={submit}
+        >
           <div className="form-field">
-            <label htmlFor="fullName">Full name</label>
-            <input id="fullName" name="fullName" value={values.fullName} onChange={update} required autoComplete="name" />
+            <label htmlFor="fullName">
+              Full name
+            </label>
+
+            <input
+              id="fullName"
+              name="fullName"
+              value={form.fullName}
+              onChange={updateField}
+              placeholder="Enter full name"
+              autoComplete="name"
+              disabled={loading}
+              required
+            />
           </div>
+
           <div className="form-field">
-            <label htmlFor="username">Username</label>
-            <input id="username" name="username" value={values.username} onChange={update} required autoComplete="username" />
+            <label htmlFor="username">
+              Username
+            </label>
+
+            <input
+              id="username"
+              name="username"
+              value={form.username}
+              onChange={updateField}
+              placeholder="Choose a username"
+              autoComplete="username"
+              disabled={loading}
+              required
+            />
           </div>
+
           <div className="form-field">
-            <label htmlFor="email">Email</label>
-            <input id="email" name="email" type="email" value={values.email} onChange={update} required autoComplete="email" />
+            <label htmlFor="email">
+              Email
+            </label>
+
+            <input
+              id="email"
+              name="email"
+              type="email"
+              value={form.email}
+              onChange={updateField}
+              placeholder="Enter email"
+              autoComplete="email"
+              disabled={loading}
+              required
+            />
           </div>
+
           <div className="form-field">
-            <label htmlFor="phone">Phone <span className="muted">(optional)</span></label>
-            <input id="phone" name="phone" value={values.phone} onChange={update} autoComplete="tel" />
+            <label htmlFor="phone">
+              Phone
+            </label>
+
+            <input
+              id="phone"
+              name="phone"
+              type="tel"
+              value={form.phone}
+              onChange={updateField}
+              placeholder="Enter phone number"
+              autoComplete="tel"
+              disabled={loading}
+            />
           </div>
+
           <div className="form-field">
-            <label htmlFor="role">Role</label>
-            <select id="role" name="role" value={values.role} onChange={update}>
-              <option value="STAFF">Staff (View Only)</option>
-              <option value="MANAGER">Manager (Manage Inventory)</option>
-              <option value="ADMIN">Admin (Full Access)</option>
-            </select>
+            <label htmlFor="password">
+              Password
+            </label>
+
+            <input
+              id="password"
+              name="password"
+              type="password"
+              value={form.password}
+              onChange={updateField}
+              placeholder="Create password"
+              autoComplete="new-password"
+              disabled={loading}
+              required
+            />
           </div>
+
           <div className="form-field">
-            <label htmlFor="password">Password</label>
-            <input id="password" name="password" type="password" minLength="8" value={values.password} onChange={update} required autoComplete="new-password" />
+            <label htmlFor="confirmPassword">
+              Confirm password
+            </label>
+
+            <input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              value={
+                form.confirmPassword
+              }
+              onChange={updateField}
+              placeholder="Confirm password"
+              autoComplete="new-password"
+              disabled={loading}
+              required
+            />
           </div>
-          <div className="form-field">
-            <label htmlFor="confirmPassword">Confirm password</label>
-            <input id="confirmPassword" name="confirmPassword" type="password" minLength="8" value={values.confirmPassword} onChange={update} required autoComplete="new-password" />
-          </div>
-          {error && <div className="login-error">{error}</div>}
-          <button type="submit" style={{ width: '100%' }} disabled={saving}>
-            {saving ? 'Creating account...' : 'Create account'}
+
+          {error && (
+            <div
+              className="login-error"
+              role="alert"
+            >
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div
+              style={{
+                padding: "10px 12px",
+                borderRadius: 8,
+                background:
+                  "#dcfce7",
+                color:
+                  "#166534",
+                fontSize: 13,
+              }}
+            >
+              {success}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="login-submit"
+            disabled={loading}
+          >
+            {loading
+              ? "Creating account..."
+              : "Create account"}
           </button>
         </form>
-        <p className="muted" style={{ marginTop: 16, textAlign: 'center' }}>
-          Already have an account? <Link to="/login">Sign in</Link>
-        </p>
+
+        <div className="login-register">
+          <span>
+            Already have an account?
+          </span>
+
+          <Link to="/login">
+            Sign in
+          </Link>
+        </div>
       </div>
     </div>
   );
