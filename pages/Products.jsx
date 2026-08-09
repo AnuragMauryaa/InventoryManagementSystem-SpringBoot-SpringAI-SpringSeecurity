@@ -1,323 +1,341 @@
-import { useState } from 'react';
-import PageHeader from '../components/PageHeader';
-import DataTable from '../components/DataTable';
-import Badge from '../components/Badge';
-import FormModal from '../components/FormModal';
-import { useStore } from '../store/StoreContext';
-import { useAuth } from '../auth/AuthContext';
+import { useMemo, useState } from "react";
 
-const inr = (n) => '₹' + Number(n).toLocaleString('en-IN');
+import PageHeader from "../components/PageHeader";
+import DataTable from "../components/DataTable";
+import Badge from "../components/Badge";
+import FormModal from "../components/FormModal";
+
+import { categories, units } from "../data/dummyData";
+import { useStore } from "../store/StoreContext";
+import { useAuth } from "../auth/AuthContext";
+
+const inr = (value) =>
+  `₹${Number(value || 0).toLocaleString("en-IN")}`;
 
 export default function Products() {
+  const {
+    products,
+    addProduct,
+    updateProduct,
+    deleteProduct,
+    loading,
+    error,
+  } = useStore();
 
-    const {
-        products,
-        categories,
-        units,
-        addProduct,
-        updateProduct,
-        deleteProduct
-    } = useStore();
+  const { can } = useAuth();
 
-    const { can } = useAuth();
+  const [search, setSearch] =
+    useState("");
 
-    const [search, setSearch] = useState("");
-    const [showForm, setShowForm] = useState(false);
-    const [editing, setEditing] = useState(null);
+  const [showForm, setShowForm] =
+    useState(false);
 
-    const rows = products.filter((p) => {
+  const [editingProduct, setEditingProduct] =
+    useState(null);
 
-        const keyword = search.toLowerCase();
+  const [actionError, setActionError] =
+    useState("");
 
-        return (
+  const rows = useMemo(() => {
+    const query =
+      search.trim().toLowerCase();
 
-            p.name.toLowerCase().includes(keyword) ||
+    if (!query) {
+      return products;
+    }
 
-            p.sku.toLowerCase().includes(keyword)
+    return products.filter((product) => {
+      const sku =
+        String(product.sku || "")
+          .toLowerCase();
 
-        );
+      const name =
+        String(product.name || "")
+          .toLowerCase();
 
+      return (
+        sku.includes(query) ||
+        name.includes(query)
+      );
     });
+  }, [products, search]);
 
-    const columns = [
+  const columns = [
+    {
+      key: "sku",
+      header: "SKU",
+    },
+    {
+      key: "name",
+      header: "Name",
+    },
+    {
+      key: "category",
+      header: "Category",
+    },
+    {
+      key: "unit",
+      header: "Unit",
+    },
+    {
+      key: "costPrice",
+      header: "Cost",
+      render: (row) =>
+        inr(row.costPrice),
+    },
+    {
+      key: "sellPrice",
+      header: "Sell",
+      render: (row) =>
+        inr(row.sellPrice),
+    },
+    {
+      key: "onHand",
+      header: "On hand",
+    },
+    {
+      key: "active",
+      header: "Status",
+      render: (row) => (
+        <Badge
+          color={
+            row.active
+              ? "green"
+              : "gray"
+          }
+        >
+          {row.active
+            ? "Active"
+            : "Inactive"}
+        </Badge>
+      ),
+    },
+  ];
 
-        {
-            key: "sku",
-            header: "SKU"
-        },
+  const fields = [
+    {
+      name: "sku",
+      label: "SKU",
+      required: true,
+      placeholder: "e.g. ELEC-003",
+    },
+    {
+      name: "name",
+      label: "Name",
+      required: true,
+      placeholder: "Product name",
+    },
+    {
+      name: "category",
+      label: "Category",
+      type: "select",
+      options: categories.map(
+        (category) => ({
+          value: category.name,
+          label: category.name,
+        })
+      ),
+    },
+    {
+      name: "unit",
+      label: "Unit",
+      type: "select",
+      options: units.map(
+        (unit) => ({
+          value:
+            unit.abbreviation,
+          label: `${unit.name} (${unit.abbreviation})`,
+        })
+      ),
+    },
+    {
+      name: "costPrice",
+      label: "Cost price (₹)",
+      type: "number",
+      required: true,
+      min: 0,
+      step: 0.01,
+    },
+    {
+      name: "sellPrice",
+      label: "Sell price (₹)",
+      type: "number",
+      required: true,
+      min: 0,
+      step: 0.01,
+    },
+    {
+      name: "reorderLevel",
+      label: "Reorder level",
+      type: "number",
+      min: 0,
+    },
+    {
+      name: "onHand",
+      label: "Opening stock",
+      type: "number",
+      min: 0,
+    },
+    {
+      name: "active",
+      label: "Active",
+      type: "checkbox",
+    },
+  ];
 
-        {
-            key: "name",
-            header: "Product"
-        },
+  const openCreate = () => {
+    setActionError("");
+    setEditingProduct(null);
+    setShowForm(true);
+  };
 
-        {
-    key: "categoryName",
-    header: "Category"
-},
-{
-    key: "unitName",
-    header: "Unit"
-},
+  const closeForm = () => {
+    setShowForm(false);
+    setEditingProduct(null);
+    setActionError("");
+  };
 
-        {
-            key: "costPrice",
-            header: "Cost Price",
-            render: (r) => inr(r.costPrice)
-        },
+  const handleSubmit = async (
+    values
+  ) => {
+    setActionError("");
 
-        {
-            key: "sellPrice",
-            header: "Selling Price",
-            render: (r) => inr(r.sellPrice)
-        },
-
-        {
-            key: "onHand",
-            header: "On Hand"
-        },
-
-        {
-            key: "active",
-            header: "Status",
-            render: (r) => (
-                <Badge color={r.active ? "green" : "gray"}>
-                    {r.active ? "Active" : "Inactive"}
-                </Badge>
-            )
-        }
-
-    ];
-
-    const fields = [
-
-        {
-            name: "sku",
-            label: "SKU",
-            required: true
-        },
-
-        {
-            name: "name",
-            label: "Product Name",
-            required: true
-        },
-
-        {
-            name: "category",
-            label: "Category",
-            type: "select",
-            required: true,
-            options: categories.map((c) => ({
-                value: c.id,
-                label: c.name
-            }))
-        },
-
-        {
-            name: "unit",
-            label: "Unit",
-            type: "select",
-            required: true,
-            options: units.map((u) => ({
-                value: u.id,
-                label: u.name
-            }))
-        },
-
-        {
-            name: "costPrice",
-            label: "Purchase Price",
-            type: "number",
-            required: true,
-            min: 0
-        },
-
-        {
-            name: "sellPrice",
-            label: "Selling Price",
-            type: "number",
-            required: true,
-            min: 0
-        },
-
-        {
-            name: "reorderLevel",
-            label: "Reorder Level",
-            type: "number",
-            required: true,
-            min: 0
-        }
-
-    ];
-
-    const createProduct = async (values) => {
-
-        await addProduct(values);
-
-        setShowForm(false);
-
-    };
-
-    const editProduct = async (values) => {
-
-        await updateProduct(editing.id, values);
-
-        setEditing(null);
-
-    };
-
-    const removeProduct = async (product) => {
-
-        const confirmed = window.confirm(
-
-            `Delete "${product.name}" ?`
-
+    try {
+      if (editingProduct) {
+        await updateProduct(
+          editingProduct.id,
+          values
         );
+      } else {
+        await addProduct(values);
+      }
 
-        if (!confirmed) return;
+      closeForm();
+    } catch (err) {
+      console.error(
+        "Product save failed:",
+        err
+      );
 
-        await deleteProduct(product.id);
+      setActionError(
+        err?.message ||
+          "Unable to save product."
+      );
 
-    };
-        return (
+      throw err;
+    }
+  };
 
-        <div>
+  const handleDelete = async (
+    product
+  ) => {
+    if (!can("edit")) {
+      return;
+    }
 
-            <PageHeader
-                title="Products"
-                subtitle={`${rows.length} of ${products.length} products`}
-            >
+    const confirmed =
+      window.confirm(
+        `Delete product "${product.name}"?`
+      );
 
-                <input
-                    placeholder="Search product..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    style={{ width: 250 }}
-                />
+    if (!confirmed) {
+      return;
+    }
 
-                {
-                    can("create") && (
-                        <button
-                            onClick={() => {
+    try {
+      setActionError("");
 
-                                setEditing(null);
+      await deleteProduct(
+        product.id
+      );
+    } catch (err) {
+      console.error(
+        "Product deletion failed:",
+        err
+      );
 
-                                setShowForm(true);
+      setActionError(
+        err?.message ||
+          "Unable to delete product."
+      );
+    }
+  };
 
-                            }}
-                        >
-                            + New Product
-                        </button>
-                    )
-                }
+  /*
+   * DataTable supports row rendering through
+   * its configured columns. Keep the table simple
+   * until the backend contract for update/delete
+   * is fully matched.
+   */
+  return (
+    <div>
+      <PageHeader
+        title="Products"
+        subtitle={`${rows.length} of ${products.length} shown`}
+      >
+        <input
+          placeholder="Search SKU / name…"
+          value={search}
+          onChange={(event) =>
+            setSearch(
+              event.target.value
+            )
+          }
+          style={{
+            width: 220,
+          }}
+        />
 
-            </PageHeader>
+        {can("create") && (
+          <button
+            onClick={openCreate}
+          >
+            + New Product
+          </button>
+        )}
+      </PageHeader>
 
-            <DataTable
-
-                columns={columns}
-
-                rows={rows}
-
-                empty="No Products Found."
-
-                actions={(row) => (
-
-                    <>
-                        {
-                            can("edit") && (
-                                <button
-                                    className="secondary"
-                                    onClick={() => setEditing(row)}
-                                >
-                                    Edit
-                                </button>
-                            )
-                        }
-
-                        {
-                            can("edit") && (
-                                <button
-                                    onClick={() => removeProduct(row)}
-                                    style={{
-                                        background: "#dc2626"
-                                    }}
-                                >
-                                    Delete
-                                </button>
-                            )
-                        }
-                    </>
-
-                )}
-
-            />
-
-            {
-
-                showForm && (
-
-                    <FormModal
-
-                        title="Create Product"
-
-                        fields={fields}
-
-                        submitLabel="Save"
-
-                        onSubmit={createProduct}
-
-                        onClose={() => setShowForm(false)}
-
-                    />
-
-                )
-
-            }
-
-            {
-
-                editing && (
-
-                    <FormModal
-
-                        title="Edit Product"
-
-                        fields={fields}
-
-                        initial={{
-
-                            sku: editing.sku,
-
-                            name: editing.name,
-
-                            category: editing.category,
-
-                            unit: editing.unit,
-
-                            costPrice: editing.costPrice,
-
-                            sellPrice: editing.sellPrice,
-
-                            reorderLevel: editing.reorderLevel
-
-                        }}
-
-                        submitLabel="Update Product"
-
-                        onSubmit={editProduct}
-
-                        onClose={() => setEditing(null)}
-
-                    />
-
-                )
-
-            }
-
+      {(error || actionError) && (
+        <div
+          className="login-error"
+          role="alert"
+        >
+          {actionError || error}
         </div>
+      )}
 
-    );
+      {loading ? (
+        <p className="muted">
+          Loading products...
+        </p>
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={rows}
+          empty="No products match your search."
+        />
+      )}
 
+      {showForm && (
+        <FormModal
+          title={
+            editingProduct
+              ? "Edit Product"
+              : "New Product"
+          }
+          fields={fields}
+          initial={
+            editingProduct || {}
+          }
+          submitLabel={
+            editingProduct
+              ? "Update Product"
+              : "Create Product"
+          }
+          onSubmit={handleSubmit}
+          onClose={closeForm}
+        />
+      )}
+    </div>
+  );
 }
