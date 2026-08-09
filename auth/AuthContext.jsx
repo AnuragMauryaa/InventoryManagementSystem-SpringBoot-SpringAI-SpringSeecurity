@@ -1,27 +1,40 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+
 import api from "../services/api";
 
 const AuthContext = createContext(null);
 
-const STORAGE_KEY = "ims.auth.user";
-
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  }, [user]);
+    const initializeAuth = async () => {
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const response = await api.get("/auth/me");
+        setUser(response.data);
+      } catch (error) {
+        localStorage.removeItem("token");
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initializeAuth();
+  }, []);
 
   const login = async (username, password) => {
     try {
@@ -30,47 +43,40 @@ export function AuthProvider({ children }) {
         password,
       });
 
-      const data = response.data;
-
-      /*
-       * Your backend login response should contain the JWT.
-       * Common possibilities:
-       * { token: "..." }
-       * or { accessToken: "..." }
-       */
-
-      const token = data.token || data.accessToken;
-
-      if (!token) {
-        return {
-          ok: false,
-          error: "Login succeeded but JWT token was not returned.",
-        };
-      }
+      const { token, user } = response.data;
 
       localStorage.setItem("token", token);
-
-      const loggedInUser = {
-        username: data.username || username,
-        name: data.fullName || data.name || username,
-        role: data.role || "Staff",
-      };
-
-      setUser(loggedInUser);
+      setUser(user);
 
       return {
         ok: true,
-        user: loggedInUser,
+        user,
       };
     } catch (error) {
-      console.error("Login error:", error);
-
       return {
         ok: false,
         error:
           error.response?.data?.message ||
           error.response?.data ||
           "Invalid username or password.",
+      };
+    }
+  };
+
+  const register = async (registrationData) => {
+    try {
+      await api.post("/auth/register", registrationData);
+
+      return {
+        ok: true,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error.response?.data?.message ||
+          error.response?.data ||
+          "Registration failed.",
       };
     }
   };
@@ -83,20 +89,42 @@ export function AuthProvider({ children }) {
   const can = (action) => {
     if (!user) return false;
 
+    const role =
+      user.role?.roleType ||
+      user.role?.name ||
+      user.role;
+
     const permissions = {
-      Admin: ["view", "create", "edit", "adjust", "manageUsers"],
-      Manager: ["view", "create", "edit", "adjust"],
-      Staff: ["view"],
+      Admin: [
+        "view",
+        "create",
+        "edit",
+        "adjust",
+        "manageUsers",
+      ],
+
+      Manager: [
+        "view",
+        "create",
+        "edit",
+        "adjust",
+      ],
+
+      Staff: [
+        "view",
+      ],
     };
 
-    return permissions[user.role]?.includes(action) || false;
+    return permissions[role]?.includes(action) || false;
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        loading,
         login,
+        register,
         logout,
         can,
       }}
@@ -110,7 +138,9 @@ export function useAuth() {
   const ctx = useContext(AuthContext);
 
   if (!ctx) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    throw new Error(
+      "useAuth must be used within an AuthProvider"
+    );
   }
 
   return ctx;
