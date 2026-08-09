@@ -29,14 +29,19 @@ export default function Login() {
     setError("");
     setLoading(true);
 
-    const result = await login(username, password);
+    try {
+      const result = await login(username, password);
 
-    setLoading(false);
-
-    if (result.ok) {
-      navigate(from, { replace: true });
-    } else {
-      setError(result.error);
+      if (result.ok) {
+        navigate(from, { replace: true });
+      } else {
+        setError(result.error || "Login failed.");
+      }
+    } catch (err) {
+      console.error("Login error:", err);
+      setError("Unable to connect to the server.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -105,9 +110,6 @@ export default function Login() {
           </button>
         </form>
       </div>
-    </div>
-  );
-}
     </div>
   );
 }
